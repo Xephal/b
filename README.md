@@ -35,103 +35,85 @@ const ChatBox = ({
   const isCompleted = responseChunks && responseChunks.length > 0
   const timing = 60
 
-  // === Refs ===
+  // refs
   const bottomOfMessagesRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  // === État logique pour le scroll auto ===
-  const allowAutoScrollForGen = useRef(false) // autorisation d'autoscroll pendant cette génération
-  const programmaticScroll = useRef(false) // empêche les scroll events auto d’être pris comme user
-  const prevNewlineCount = useRef(0)
-  const prevTextLength = useRef(0)
-  const lastLoading = useRef(false)
+  // flags pour la génération courante
+  const autoScrollLocked = useRef(false)           // user a scrolled up pendant cette génération
+  const ignoreScrollUntil = useRef<number | null>(null) // ignore les scroll events causés par scrollIntoView
+  const prevNewlineCount = useRef(0)               // nombre de \n déjà vus pour CETTE génération
 
-  // === Buffer cumulé du message streamé ===
+  // buffer cumulé du message streamé, peu importe comment tes chunks arrivent
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
+
+  // util: count \n
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
 
-  // === Réinitialisation des flags au démarrage/fin de génération ===
+  // Quand une génération démarre: réinitialiser les compteurs/flags
   useEffect(() => {
-    const wasLoading = lastLoading.current
-    if (!wasLoading && loading) {
-      // Début génération
-      allowAutoScrollForGen.current = true
-      programmaticScroll.current = false
+    if (loading) {
+      autoScrollLocked.current = false
       prevNewlineCount.current = countNewlines(streamedText)
-      prevTextLength.current = streamedText.length
-    } else if (wasLoading && !loading) {
-      // Fin génération
-      allowAutoScrollForGen.current = false
-      programmaticScroll.current = false
+    } else {
+      // génération terminée: prêt pour la suivante
+      autoScrollLocked.current = false
+      ignoreScrollUntil.current = null
       prevNewlineCount.current = 0
-      prevTextLength.current = 0
     }
-    lastLoading.current = loading
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // === Gestion du scroll manuel utilisateur ===
+  // Écoute le scroll du vrai conteneur (pas window)
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
     const handleScroll = () => {
-      if (programmaticScroll.current) return
-      if (!loading) return
-      const threshold = 80
+      // ignorer le scroll déclenché par scrollIntoView le temps de l’animation
+      if (ignoreScrollUntil.current && Date.now() < ignoreScrollUntil.current) {
+        return
+      }
+
+      const threshold = 40
       const isNearBottom =
         el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
-      if (!isNearBottom) allowAutoScrollForGen.current = false
-    }
 
-    const handleUserIntent = () => {
-      if (loading) allowAutoScrollForGen.current = false
+      // si on n’est pas près du bas pendant la génération → l’utilisateur a pris la main
+      if (!isNearBottom && loading) {
+        autoScrollLocked.current = true
+      }
     }
 
     el.addEventListener('scroll', handleScroll, { passive: true })
-    el.addEventListener('wheel', handleUserIntent, { passive: true })
-    el.addEventListener('touchmove', handleUserIntent, { passive: true })
-
-    return () => {
-      el.removeEventListener('scroll', handleScroll)
-      el.removeEventListener('wheel', handleUserIntent)
-      el.removeEventListener('touchmove', handleUserIntent)
-    }
+    return () => el.removeEventListener('scroll', handleScroll)
   }, [loading])
 
-  // === Auto-scroll dynamique pendant la génération ===
+  // Auto-scroll sur nouvelle LIGNE uniquement,
+  // et seulement si l’utilisateur n’a pas scrolled up pendant la génération
   useEffect(() => {
-    if (!loading) return
+    if (!loading) return // on ne s’occupe que de la génération en cours
 
-    const newLineCount = countNewlines(streamedText)
-    const hasNewLine = newLineCount > prevNewlineCount.current
-    const textGrew = streamedText.length > prevTextLength.current
+    const newCount = countNewlines(streamedText)
+    const hasNewLine = newCount > prevNewlineCount.current
 
-    // Scroll si le texte grandit ou si nouvelle ligne, et si autorisé
     if (
-      (hasNewLine || textGrew) &&
-      allowAutoScrollForGen.current &&
-      bottomOfMessagesRef.current
+      hasNewLine &&
+      !autoScrollLocked.current &&
+      bottomOfMessagesRef.current &&
+      scrollContainerRef.current
     ) {
-      programmaticScroll.current = true
-      // On attend un peu que le DOM se mette à jour avant de scroller
-      setTimeout(() => {
-        bottomOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' })
-        // On ignore les scroll events déclenchés par ce scroll pendant 150ms
-        setTimeout(() => {
-          programmaticScroll.current = false
-        }, 150)
-      }, 10)
+      bottomOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' })
+      // ignorer les events de scroll causés par cette animation
+      ignoreScrollUntil.current = Date.now() + 400
     }
 
-    prevNewlineCount.current = newLineCount
-    prevTextLength.current = streamedText.length
+    prevNewlineCount.current = newCount
   }, [streamedText, loading])
 
   return (
     <>
       <ToastContainer className="fixed top-16 right-5 w-full z-70" />
-
       <div
         ref={scrollContainerRef}
         className="flex-grow overflow-y-auto flex flex-col relative min-h-[250px] py-4"
@@ -183,11 +165,12 @@ const ChatBox = ({
             messages?.map((message, index) => {
               const isLast = index === messages.length - 1
               const response = isLast ? responseChunks : []
+
               return (
                 <div key={message.id} className="z-10">
                   <MessageElement
                     message={message}
-                    timing={timing}
+                    timing={60}
                     responseChunks={response}
                     loading={isLast ? loading : false}
                     isLast={isLast}
@@ -208,6 +191,7 @@ const ChatBox = ({
 }
 
 export default ChatBox
+
 
 ```
 
