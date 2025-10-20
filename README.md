@@ -147,3 +147,36 @@ const ChatBox = ({
                   </p>
                 </div>
               </div>
+              <span className="text-gray-600 font-black font-open font-thin text-2xl md:text-2xl lg:text-2xl 2xl:text-3xl">
+                {t('helpText')}
+              </span>
+            </div>
+          ) : (
+            selectedConversation &&
+            messages?.map((message, index) => {
+              const isLast = index === messages.length - 1
+              const response = isLast ? responseChunks : []
+
+              return (
+                <div key={message.id} className="z-10">
+                  <MessageElement
+                    message={message}
+                    timing={timing}
+                    responseChunks={response}
+                    loading={isLast ? loading : false}
+                    isLast={isLast}
+                    isCompleted={isCompleted}
+                    isProgressBarVisible={isProgressBarVisible}
+                    setIsProgressBarVisible={setIsProgressBarVisible}
+                  />
+                </div>
+              )
+            })
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+export default ChatBox
