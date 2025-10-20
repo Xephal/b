@@ -34,53 +34,36 @@ const ChatBox = ({
   const isCompleted = responseChunks && responseChunks.length > 0
   const timing = 60
 
-  // Refs
-  const bottomOfMessagesRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  // Flags de génération
   const autoScrollLocked = useRef(false)
-  const ignoreScrollUntil = useRef<number | null>(null)
   const prevNewlineCount = useRef(0)
-
-  // Buffer cumulé
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
-
-  // Compteur de retours à la ligne
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
 
-  // Quand une génération démarre / se termine
+  // reset flags au début/fin de génération
   useEffect(() => {
     if (loading) {
       autoScrollLocked.current = false
       prevNewlineCount.current = countNewlines(streamedText)
     } else {
-      // génération terminée
-      ignoreScrollUntil.current = null
+      // fin de génération → on ne fait rien de spécial, on ne scrolle pas
       prevNewlineCount.current = 0
-      // on ne fait rien si le user avait scrollé (autoScrollLocked=true)
-      // => pas de scroll final forcé
-      autoScrollLocked.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // Écoute le scroll manuel
+  // écoute scroll manuel utilisateur
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
     const handleScroll = () => {
-      // ignorer le scroll déclenché par scrollIntoView le temps de l’animation
-      if (ignoreScrollUntil.current && Date.now() < ignoreScrollUntil.current) {
-        return
-      }
-
       const threshold = 40
       const isNearBottom =
         el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
 
-      // si on n’est pas près du bas pendant la génération → user a scrollé
       if (!isNearBottom && loading) {
         autoScrollLocked.current = true
       }
@@ -90,21 +73,19 @@ const ChatBox = ({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [loading])
 
-  // Auto-scroll sur nouvelle ligne uniquement pendant la génération
+  // autoscroll manuel (sans scrollIntoView)
   useEffect(() => {
     if (!loading) return
+
+    const el = scrollContainerRef.current
+    if (!el || autoScrollLocked.current) return
 
     const newCount = countNewlines(streamedText)
     const hasNewLine = newCount > prevNewlineCount.current
 
-    if (
-      hasNewLine &&
-      !autoScrollLocked.current &&
-      bottomOfMessagesRef.current &&
-      scrollContainerRef.current
-    ) {
-      bottomOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' })
-      ignoreScrollUntil.current = Date.now() + 400
+    if (hasNewLine) {
+      // au lieu de scrollIntoView, on fait un scrollTop manuel
+      el.scrollTop = el.scrollHeight
     }
 
     prevNewlineCount.current = newCount
@@ -182,7 +163,7 @@ const ChatBox = ({
             })
           )}
 
-          <div ref={bottomOfMessagesRef} />
+          <div ref={bottomRef} />
         </div>
       </div>
     </>
