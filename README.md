@@ -35,34 +35,32 @@ const ChatBox = ({
   const isCompleted = responseChunks && responseChunks.length > 0
   const timing = 60
 
-  // Refs pour UI
+  // === Refs ===
   const bottomOfMessagesRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  // Refs pour logique de scroll par génération
-  const generationId = useRef(0)
-  const allowAutoScrollForGen = useRef(false)
-  const programmaticScroll = useRef(false)
+  // === État logique pour le scroll auto ===
+  const allowAutoScrollForGen = useRef(false) // autorisation d'autoscroll pendant cette génération
+  const programmaticScroll = useRef(false) // empêche les scroll events auto d’être pris comme user
   const prevNewlineCount = useRef(0)
   const prevTextLength = useRef(0)
   const lastLoading = useRef(false)
 
-  // Texte streamé complet
+  // === Buffer cumulé du message streamé ===
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
 
-  // Détecte le passage de "non-loading" à "loading" pour réinitialiser les flags
+  // === Réinitialisation des flags au démarrage/fin de génération ===
   useEffect(() => {
     const wasLoading = lastLoading.current
     if (!wasLoading && loading) {
-      // Nouvelle génération
-      generationId.current += 1
+      // Début génération
       allowAutoScrollForGen.current = true
       programmaticScroll.current = false
       prevNewlineCount.current = countNewlines(streamedText)
       prevTextLength.current = streamedText.length
     } else if (wasLoading && !loading) {
-      // Fin de génération
+      // Fin génération
       allowAutoScrollForGen.current = false
       programmaticScroll.current = false
       prevNewlineCount.current = 0
@@ -72,17 +70,17 @@ const ChatBox = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // Gestion du scroll manuel (désactive l’autoscroll pour cette génération)
+  // === Gestion du scroll manuel utilisateur ===
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
     const handleScroll = () => {
-      if (programmaticScroll.current) return // ignorer les scrolls causés par notre propre scroll
+      if (programmaticScroll.current) return
       if (!loading) return
-
       const threshold = 80
-      const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
+      const isNearBottom =
+        el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
       if (!isNearBottom) allowAutoScrollForGen.current = false
     }
 
@@ -101,7 +99,7 @@ const ChatBox = ({
     }
   }, [loading])
 
-  // Auto-scroll sur nouvelle ligne si autorisé
+  // === Auto-scroll dynamique pendant la génération ===
   useEffect(() => {
     if (!loading) return
 
@@ -109,23 +107,21 @@ const ChatBox = ({
     const hasNewLine = newLineCount > prevNewlineCount.current
     const textGrew = streamedText.length > prevTextLength.current
 
+    // Scroll si le texte grandit ou si nouvelle ligne, et si autorisé
     if (
-      hasNewLine &&
-      textGrew &&
+      (hasNewLine || textGrew) &&
       allowAutoScrollForGen.current &&
-      bottomOfMessagesRef.current &&
-      scrollContainerRef.current
+      bottomOfMessagesRef.current
     ) {
       programmaticScroll.current = true
-
-      // Utilise un léger délai pour laisser React rendre la nouvelle ligne avant scroll
+      // On attend un peu que le DOM se mette à jour avant de scroller
       setTimeout(() => {
         bottomOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' })
-        // On ignore les scroll events déclenchés par ce scroll pendant 350ms
+        // On ignore les scroll events déclenchés par ce scroll pendant 150ms
         setTimeout(() => {
           programmaticScroll.current = false
-        }, 350)
-      }, 30)
+        }, 150)
+      }, 10)
     }
 
     prevNewlineCount.current = newLineCount
@@ -212,6 +208,7 @@ const ChatBox = ({
 }
 
 export default ChatBox
+
 ```
 
 ```🎯 Objectif
