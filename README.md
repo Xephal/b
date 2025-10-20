@@ -36,8 +36,9 @@ const ChatBox = ({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const autoScrollLocked = useRef(false)
+  const savedScroll = useRef(0)
   const prevNewlineCount = useRef(0)
-  const [containerHeight, setContainerHeight] = useState<number | null>(null)
+  const unlockTimeout = useRef<NodeJS.Timeout | null>(null)
 
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
@@ -51,11 +52,9 @@ const ChatBox = ({
       const threshold = 40
       const isNearBottom =
         el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
-
       if (!isNearBottom && loading) {
         autoScrollLocked.current = true
-        // on fige la hauteur actuelle du container
-        setContainerHeight(el.scrollHeight)
+        savedScroll.current = el.scrollTop
       }
     }
 
@@ -63,24 +62,43 @@ const ChatBox = ({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [loading])
 
-  // Autoscroll normal tant que non locké
+  // Autoscroll pendant la génération (uniquement si non locké)
   useEffect(() => {
     const el = scrollContainerRef.current
-    if (!el || !loading || autoScrollLocked.current) return
+    if (!el || !loading) return
 
     const newCount = countNewlines(streamedText)
     const hasNewLine = newCount > prevNewlineCount.current
 
-    if (hasNewLine) el.scrollTop = el.scrollHeight
+    if (hasNewLine) {
+      if (autoScrollLocked.current) {
+        el.scrollTop = savedScroll.current
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
+    }
     prevNewlineCount.current = newCount
   }, [streamedText, loading])
 
-  // Réinitialise à la prochaine génération
+  // Maintien du scroll figé si locké
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (el && autoScrollLocked.current) {
+      el.scrollTop = savedScroll.current
+    }
+  })
+
+  // Réinitialise à la prochaine génération avec un petit délai de sécurité
   useEffect(() => {
     if (!loading) {
-      autoScrollLocked.current = false
-      setContainerHeight(null)
-      prevNewlineCount.current = 0
+      if (unlockTimeout.current) clearTimeout(unlockTimeout.current)
+      // garde le lock 500 ms après la fin du message
+      unlockTimeout.current = setTimeout(() => {
+        autoScrollLocked.current = false
+        prevNewlineCount.current = 0
+      }, 500)
+    } else {
+      if (unlockTimeout.current) clearTimeout(unlockTimeout.current)
     }
   }, [loading])
 
@@ -89,12 +107,7 @@ const ChatBox = ({
       <ToastContainer className="fixed top-16 right-5 w-full z-70" />
       <div
         ref={scrollContainerRef}
-        className="flex-grow overflow-y-auto flex flex-col relative py-4"
-        style={
-          containerHeight && autoScrollLocked.current
-            ? { maxHeight: `${containerHeight}px`, overflowY: 'scroll' }
-            : undefined
-        }
+        className="flex-grow overflow-y-auto flex flex-col relative min-h-[250px] py-4"
       >
         <div className="sticky top-2 z-10 px-3">
           <div className="flex w-full justify-start">
@@ -134,36 +147,3 @@ const ChatBox = ({
                   </p>
                 </div>
               </div>
-              <span className="text-gray-600 font-black font-open font-thin text-2xl md:text-2xl lg:text-2xl 2xl:text-3xl">
-                {t('helpText')}
-              </span>
-            </div>
-          ) : (
-            selectedConversation &&
-            messages?.map((message, index) => {
-              const isLast = index === messages.length - 1
-              const response = isLast ? responseChunks : []
-
-              return (
-                <div key={message.id} className="z-10">
-                  <MessageElement
-                    message={message}
-                    timing={timing}
-                    responseChunks={response}
-                    loading={isLast ? loading : false}
-                    isLast={isLast}
-                    isCompleted={isCompleted}
-                    isProgressBarVisible={isProgressBarVisible}
-                    setIsProgressBarVisible={setIsProgressBarVisible}
-                  />
-                </div>
-              )
-            })
-          )}
-        </div>
-      </div>
-    </>
-  )
-}
-
-export default ChatBox
