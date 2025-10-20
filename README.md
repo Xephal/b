@@ -34,11 +34,13 @@ const ChatBox = ({
   const isCompleted = responseChunks && responseChunks.length > 0
   const timing = 60
 
-  const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   const autoScrollLocked = useRef(false)
   const prevNewlineCount = useRef(0)
+  const savedScroll = useRef(0)
+
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
 
@@ -48,13 +50,11 @@ const ChatBox = ({
       autoScrollLocked.current = false
       prevNewlineCount.current = countNewlines(streamedText)
     } else {
-      // fin de génération → on ne fait rien de spécial, on ne scrolle pas
       prevNewlineCount.current = 0
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // écoute scroll manuel utilisateur
+  // Détection du scroll utilisateur
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
@@ -66,6 +66,7 @@ const ChatBox = ({
 
       if (!isNearBottom && loading) {
         autoScrollLocked.current = true
+        savedScroll.current = el.scrollTop
       }
     }
 
@@ -73,23 +74,29 @@ const ChatBox = ({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [loading])
 
-  // autoscroll manuel (sans scrollIntoView)
+  // Autoscroll pendant la génération (scroll manuel uniquement si non locké)
   useEffect(() => {
-    if (!loading) return
-
     const el = scrollContainerRef.current
-    if (!el || autoScrollLocked.current) return
+    if (!el || !loading) return
 
     const newCount = countNewlines(streamedText)
     const hasNewLine = newCount > prevNewlineCount.current
 
-    if (hasNewLine) {
-      // au lieu de scrollIntoView, on fait un scrollTop manuel
+    if (hasNewLine && !autoScrollLocked.current) {
       el.scrollTop = el.scrollHeight
     }
-
     prevNewlineCount.current = newCount
   }, [streamedText, loading])
+
+  // Empêche le saut final du DOM : on restaure le scroll mémorisé
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    if (autoScrollLocked.current) {
+      el.scrollTop = savedScroll.current
+    }
+  })
 
   return (
     <>
