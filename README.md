@@ -35,26 +35,14 @@ const ChatBox = ({
   const timing = 60
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
-
   const autoScrollLocked = useRef(false)
   const prevNewlineCount = useRef(0)
-  const savedScroll = useRef(0)
+  const [containerHeight, setContainerHeight] = useState<number | null>(null)
 
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
 
-  // reset flags au début/fin de génération
-  useEffect(() => {
-    if (loading) {
-      autoScrollLocked.current = false
-      prevNewlineCount.current = countNewlines(streamedText)
-    } else {
-      prevNewlineCount.current = 0
-    }
-  }, [loading])
-
-  // Détection du scroll utilisateur
+  // Détection du scroll manuel
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
@@ -66,7 +54,8 @@ const ChatBox = ({
 
       if (!isNearBottom && loading) {
         autoScrollLocked.current = true
-        savedScroll.current = el.scrollTop
+        // on fige la hauteur actuelle du container
+        setContainerHeight(el.scrollHeight)
       }
     }
 
@@ -74,36 +63,38 @@ const ChatBox = ({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [loading])
 
-  // Autoscroll pendant la génération (scroll manuel uniquement si non locké)
+  // Autoscroll normal tant que non locké
   useEffect(() => {
     const el = scrollContainerRef.current
-    if (!el || !loading) return
+    if (!el || !loading || autoScrollLocked.current) return
 
     const newCount = countNewlines(streamedText)
     const hasNewLine = newCount > prevNewlineCount.current
 
-    if (hasNewLine && !autoScrollLocked.current) {
-      el.scrollTop = el.scrollHeight
-    }
+    if (hasNewLine) el.scrollTop = el.scrollHeight
     prevNewlineCount.current = newCount
   }, [streamedText, loading])
 
-  // Empêche le saut final du DOM : on restaure le scroll mémorisé
+  // Réinitialise à la prochaine génération
   useEffect(() => {
-    const el = scrollContainerRef.current
-    if (!el) return
-
-    if (autoScrollLocked.current) {
-      el.scrollTop = savedScroll.current
+    if (!loading) {
+      autoScrollLocked.current = false
+      setContainerHeight(null)
+      prevNewlineCount.current = 0
     }
-  })
+  }, [loading])
 
   return (
     <>
       <ToastContainer className="fixed top-16 right-5 w-full z-70" />
       <div
         ref={scrollContainerRef}
-        className="flex-grow overflow-y-auto flex flex-col relative min-h-[250px] py-4"
+        className="flex-grow overflow-y-auto flex flex-col relative py-4"
+        style={
+          containerHeight && autoScrollLocked.current
+            ? { maxHeight: `${containerHeight}px`, overflowY: 'scroll' }
+            : undefined
+        }
       >
         <div className="sticky top-2 z-10 px-3">
           <div className="flex w-full justify-start">
@@ -169,8 +160,6 @@ const ChatBox = ({
               )
             })
           )}
-
-          <div ref={bottomRef} />
         </div>
       </div>
     </>
