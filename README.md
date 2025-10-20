@@ -35,27 +35,56 @@ const ChatBox = ({
   const isCompleted = responseChunks && responseChunks.length > 0
   const timing = 60
 
+  // Refs
+  const bottomOfMessagesRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const autoScrollLocked = useRef(false)
-  const savedScroll = useRef(0)
-  const prevNewlineCount = useRef(0)
-  const unlockTimeout = useRef<NodeJS.Timeout | null>(null)
 
+  // Flags pour la génération courante
+  const autoScrollLocked = useRef(false)           // user a scrolled up pendant cette génération
+  const ignoreScrollUntil = useRef<number | null>(null) // ignore les scroll events auto
+  const prevNewlineCount = useRef(0)               // nombre de \n déjà vus pour CETTE génération
+
+  // Buffer cumulé du message streamé
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
+
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
 
-  // Détection du scroll manuel
+  // Quand une génération démarre ou se termine
+  useEffect(() => {
+    if (loading) {
+      // Démarrage de génération
+      autoScrollLocked.current = false
+      prevNewlineCount.current = countNewlines(streamedText)
+    } else {
+      // Fin de génération : on NE déverrouille pas tout de suite,
+      // pour éviter le scroll final non désiré
+      setTimeout(() => {
+        autoScrollLocked.current = false
+        ignoreScrollUntil.current = null
+        prevNewlineCount.current = 0
+      }, 300) // petit délai pour s'assurer qu'aucun scroll de fin ne s'exécute
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  // Gestion du scroll manuel dans le conteneur
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
     const handleScroll = () => {
+      // ignorer le scroll auto récent
+      if (ignoreScrollUntil.current && Date.now() < ignoreScrollUntil.current) {
+        return
+      }
+
       const threshold = 40
       const isNearBottom =
         el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
+
+      // Si user remonte pendant la génération → lock auto-scroll
       if (!isNearBottom && loading) {
         autoScrollLocked.current = true
-        savedScroll.current = el.scrollTop
       }
     }
 
@@ -63,45 +92,26 @@ const ChatBox = ({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [loading])
 
-  // Autoscroll pendant la génération (uniquement si non locké)
+  // Auto-scroll sur nouvelle ligne uniquement,
+  // et seulement si le user n’a pas scrolled up pendant la génération
   useEffect(() => {
-    const el = scrollContainerRef.current
-    if (!el || !loading) return
+    if (!loading) return // on ignore les updates une fois la génération terminée
 
     const newCount = countNewlines(streamedText)
     const hasNewLine = newCount > prevNewlineCount.current
 
-    if (hasNewLine) {
-      if (autoScrollLocked.current) {
-        el.scrollTop = savedScroll.current
-      } else {
-        el.scrollTop = el.scrollHeight
-      }
+    if (
+      hasNewLine &&
+      !autoScrollLocked.current &&
+      bottomOfMessagesRef.current &&
+      scrollContainerRef.current
+    ) {
+      bottomOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' })
+      ignoreScrollUntil.current = Date.now() + 400 // on ignore le scroll auto lui-même
     }
+
     prevNewlineCount.current = newCount
   }, [streamedText, loading])
-
-  // Maintien du scroll figé si locké
-  useEffect(() => {
-    const el = scrollContainerRef.current
-    if (el && autoScrollLocked.current) {
-      el.scrollTop = savedScroll.current
-    }
-  })
-
-  // Réinitialise à la prochaine génération avec un petit délai de sécurité
-  useEffect(() => {
-    if (!loading) {
-      if (unlockTimeout.current) clearTimeout(unlockTimeout.current)
-      // garde le lock 500 ms après la fin du message
-      unlockTimeout.current = setTimeout(() => {
-        autoScrollLocked.current = false
-        prevNewlineCount.current = 0
-      }, 500)
-    } else {
-      if (unlockTimeout.current) clearTimeout(unlockTimeout.current)
-    }
-  }, [loading])
 
   return (
     <>
@@ -174,6 +184,8 @@ const ChatBox = ({
               )
             })
           )}
+
+          <div ref={bottomOfMessagesRef} />
         </div>
       </div>
     </>
@@ -181,4 +193,5 @@ const ChatBox = ({
 }
 
 export default ChatBox
+
 ```
