@@ -1,3 +1,4 @@
+```
 import React, { useEffect, useMemo, useRef } from 'react'
 import MessageElement from './MessageElement'
 import { useConversationStore } from '../../hooks/conversations/useSelectedConversationStore'
@@ -180,3 +181,4 @@ const ChatBox = ({
 }
 
 export default ChatBox
+```
