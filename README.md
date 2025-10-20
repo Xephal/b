@@ -34,36 +34,38 @@ const ChatBox = ({
   const isCompleted = responseChunks && responseChunks.length > 0
   const timing = 60
 
-  // refs
+  // Refs
   const bottomOfMessagesRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  // flags pour la génération courante
-  const autoScrollLocked = useRef(false)           // user a scrolled up pendant cette génération
-  const ignoreScrollUntil = useRef<number | null>(null) // ignore les scroll events causés par scrollIntoView
-  const prevNewlineCount = useRef(0)               // nombre de \n déjà vus pour CETTE génération
+  // Flags de génération
+  const autoScrollLocked = useRef(false)
+  const ignoreScrollUntil = useRef<number | null>(null)
+  const prevNewlineCount = useRef(0)
 
-  // buffer cumulé du message streamé, peu importe comment tes chunks arrivent
+  // Buffer cumulé
   const streamedText = useMemo(() => responseChunks.join(''), [responseChunks])
 
-  // util: count \n
+  // Compteur de retours à la ligne
   const countNewlines = (s: string) => (s.match(/\n/g) || []).length
 
-  // Quand une génération démarre: réinitialiser les compteurs/flags
+  // Quand une génération démarre / se termine
   useEffect(() => {
     if (loading) {
       autoScrollLocked.current = false
       prevNewlineCount.current = countNewlines(streamedText)
     } else {
-      // génération terminée: prêt pour la suivante
-      autoScrollLocked.current = false
+      // génération terminée
       ignoreScrollUntil.current = null
       prevNewlineCount.current = 0
+      // on ne fait rien si le user avait scrollé (autoScrollLocked=true)
+      // => pas de scroll final forcé
+      autoScrollLocked.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // Écoute le scroll du vrai conteneur (pas window)
+  // Écoute le scroll manuel
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
@@ -78,7 +80,7 @@ const ChatBox = ({
       const isNearBottom =
         el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
 
-      // si on n’est pas près du bas pendant la génération → l’utilisateur a pris la main
+      // si on n’est pas près du bas pendant la génération → user a scrollé
       if (!isNearBottom && loading) {
         autoScrollLocked.current = true
       }
@@ -88,10 +90,9 @@ const ChatBox = ({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [loading])
 
-  // Auto-scroll sur nouvelle LIGNE uniquement,
-  // et seulement si l’utilisateur n’a pas scrolled up pendant la génération
+  // Auto-scroll sur nouvelle ligne uniquement pendant la génération
   useEffect(() => {
-    if (!loading) return // on ne s’occupe que de la génération en cours
+    if (!loading) return
 
     const newCount = countNewlines(streamedText)
     const hasNewLine = newCount > prevNewlineCount.current
@@ -103,7 +104,6 @@ const ChatBox = ({
       scrollContainerRef.current
     ) {
       bottomOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' })
-      // ignorer les events de scroll causés par cette animation
       ignoreScrollUntil.current = Date.now() + 400
     }
 
@@ -169,7 +169,7 @@ const ChatBox = ({
                 <div key={message.id} className="z-10">
                   <MessageElement
                     message={message}
-                    timing={60}
+                    timing={timing}
                     responseChunks={response}
                     loading={isLast ? loading : false}
                     isLast={isLast}
