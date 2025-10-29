@@ -91,3 +91,18 @@ CSS;
     wp_add_inline_style('wp-edit-blocks', $css);
 });
 ```
+
+```
+// Dans la console (Editor open)
+const { select, dispatch } = wp.data;
+const blocks = select('core/block-editor').getBlocks();
+if (!blocks.length) console.log('pas de blocks sur la page');
+else {
+  const first = blocks[0];
+  // force injection de className en mémoire et sauvegarde
+  const edited = { ...first, attributes: { ...first.attributes, className: 'pwned-class' } };
+  dispatch('core/block-editor').updateBlock(edited.clientId, edited);
+  // sauvegarde du post
+  dispatch('core/editor').savePost({ force: true }).then(()=>console.log('save attempted'));
+}
+```
