@@ -93,16 +93,85 @@ CSS;
 ```
 
 ```
-// Dans la console (Editor open)
-const { select, dispatch } = wp.data;
-const blocks = select('core/block-editor').getBlocks();
-if (!blocks.length) console.log('pas de blocks sur la page');
-else {
-  const first = blocks[0];
-  // force injection de className en mémoire et sauvegarde
-  const edited = { ...first, attributes: { ...first.attributes, className: 'pwned-class' } };
-  dispatch('core/block-editor').updateBlock(edited.clientId, edited);
-  // sauvegarde du post
-  dispatch('core/editor').savePost({ force: true }).then(()=>console.log('save attempted'));
-}
+(async function() {
+  const wpData = window.wp && window.wp.data;
+  if (!wpData) return console.error('wp.data non trouvé. Ouvre l\'éditeur Gutenberg.');
+
+  const blockSelect = wpData.select('core/block-editor');
+  const editorSelect = wpData.select('core/editor');
+  const dispatcher = wpData.dispatch('core/block-editor');
+  const editorDispatcher = wpData.dispatch('core/editor');
+
+  const postId = wpData.select('core/editor').getCurrentPostId();
+  if (!postId) return console.error('Impossible de récupérer l\'ID du post actuel.');
+
+  // Trouve un block core/quote — on prend le premier trouvé
+  const blocks = blockSelect.getBlocks();
+  const quoteBlock = blocks.find(b => b.name === 'core/quote');
+
+  if (!quoteBlock) {
+    console.warn('Aucun block core/quote sur la page. Liste des blocks:', blocks.map(b => b.name).slice(0,10));
+    return;
+  }
+
+  console.log('Quote block trouvé. clientId:', quoteBlock.clientId, 'attributes avant:', quoteBlock.attributes);
+
+  // Sélectionne le block dans l'éditeur pour visibilité
+  dispatcher.selectBlock(quoteBlock.clientId);
+
+  // Tentative d'injection de className (en mémoire puis update)
+  const injectedClass = 'pwned-class-' + Math.floor(Math.random()*10000);
+  const updatedAttributes = Object.assign({}, quoteBlock.attributes, { className: injectedClass });
+
+  console.log('Injection attempt — mise à jour des attributes en mémoire:', updatedAttributes);
+  dispatcher.updateBlock(quoteBlock.clientId, { attributes: updatedAttributes });
+
+  // Force save
+  try {
+    await editorDispatcher.savePost({ force: true });
+    console.log('Save attempted — vérification REST en cours...');
+  } catch (e) {
+    console.error('Erreur à la sauvegarde:', e);
+  }
+
+  // Petite attente pour laisser le serveur répondre
+  await new Promise(r => setTimeout(r, 800));
+
+  // Récupère le post via la REST API pour inspecter le HTML rendu
+  try {
+    const resp = await fetch(`/wp-json/wp/v2/posts/${postId}`, { credentials: 'same-origin' });
+    if (!resp.ok) throw new Error('REST fetch failed: ' + resp.status);
+    const data = await resp.json();
+
+    console.log('REST response content.rendered (excerpt):', data.content && (data.content.rendered||''));
+    // Vérifie la présence de la classe injectée dans le HTML rendu
+    const presentInRendered = (data.content && data.content.rendered || '').includes(injectedClass);
+    console.log('Classe injectée trouvée dans content.rendered ?', presentInRendered);
+
+    // Inspecte le contenu brut de bloc côté éditeur (si accessible)
+    const blocksAfterSave = blockSelect.getBlocks();
+    const sameBlock = blocksAfterSave.find(b => b.clientId === quoteBlock.clientId);
+    console.log('Attributes côté client après save:', sameBlock ? sameBlock.attributes : 'block non trouvé');
+
+    if (presentInRendered) {
+      console.error('ATTENTION — la classe a été persistée côté serveur !');
+    } else {
+      console.log('OK — la classe n\'est pas visible dans le HTML rendu. Mu-plugin semble avoir neutralisé l\'injection.');
+    }
+
+  } catch (err) {
+    console.error('Erreur lors de la vérification REST:', err);
+  }
+
+  // Nettoyage visuel : retirer l'attribut dans l'éditeur si il reste en mémoire
+  try {
+    // restore original attributes (remove className)
+    const cleaned = Object.assign({}, quoteBlock.attributes);
+    delete cleaned.className;
+    dispatcher.updateBlock(quoteBlock.clientId, { attributes: cleaned });
+    console.log('Tentative de restauration locale effectuée.');
+  } catch(e) { /* silent */ }
+
+})();
+
 ```
