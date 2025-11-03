@@ -1,3 +1,4 @@
+´´´
 {/* === Base de connaissances === */}
 <label htmlFor="baseConnaissance" className="text-sm font-medium text-gray-700">
   {t("baseConnaissance")}
@@ -42,3 +43,4 @@
     ))}
   </select>
 </div>
+´´´
