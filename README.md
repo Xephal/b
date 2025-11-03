@@ -1,28 +1,44 @@
-console.log("QuizMaker fix chargé !");
-document.addEventListener("DOMContentLoaded", () => {
-  function showExplanations() {
-    document.querySelectorAll(".ays_question_explanation").forEach(exp => {
-      if (exp.textContent.trim().length > 0) {
-        exp.style.display = "block";
-        exp.style.visibility = "visible";
+{/* === Base de connaissances === */}
+<label htmlFor="baseConnaissance" className="text-sm font-medium text-gray-700">
+  {t("baseConnaissance")}
+</label>
+<div className="relative">
+  <div className="flex flex-wrap gap-2 mb-1">
+    {selectedBaseConnaissances.map((item) => (
+      <span
+        key={item}
+        className="flex items-center gap-1 bg-green-50 text-green-800 px-2 py-1 rounded text-xs"
+      >
+        {item}
+        <button
+          onClick={() =>
+            setSelectedBaseConnaissances((prev) =>
+              prev.filter((b) => b !== item)
+            )
+          }
+          className="text-green-700 hover:text-red-600"
+        >
+          ×
+        </button>
+      </span>
+    ))}
+  </div>
+
+  <select
+    id="baseConnaissance"
+    className="w-full border rounded px-2 py-1 text-gray-900 bg-white"
+    onChange={(e) => {
+      const value = e.target.value
+      if (value && !selectedBaseConnaissances.includes(value)) {
+        setSelectedBaseConnaissances((prev) => [...prev, value])
       }
-    });
-  }
-
-  // Première tentative (au chargement)
-  showExplanations();
-
-  // Observe tout changement dans le DOM
-  const obs = new MutationObserver(showExplanations);
-  obs.observe(document.body, { childList: true, subtree: true });
-
-  // Et si un clic sur "Next", "Finish" ou "Answer" survient, on ré-affiche aussi
-  document.body.addEventListener("click", e => {
-    if (
-      e.target.matches(".ays_next, .ays_finish, .ays-answer, button") ||
-      e.target.closest(".ays_buttons_div")
-    ) {
-      setTimeout(showExplanations, 300);
-    }
-  });
-});
+    }}
+  >
+    <option value="">{t("selectBaseConnaissance")}</option>
+    {conversationSettings?.baseConnaissances.map((bc: any) => (
+      <option key={bc.slug} value={bc.slug}>
+        {bc.label}
+      </option>
+    ))}
+  </select>
+</div>
