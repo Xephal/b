@@ -1,9 +1,11 @@
-´´´
+```tsx
 {/* === Base de connaissances === */}
 <label htmlFor="baseConnaissance" className="text-sm font-medium text-gray-700">
   {t("baseConnaissance")}
 </label>
+
 <div className="relative">
+  {/* Tags sélectionnés */}
   <div className="flex flex-wrap gap-2 mb-1">
     {selectedBaseConnaissances.map((item) => (
       <span
@@ -25,6 +27,7 @@
     ))}
   </div>
 
+  {/* Sélecteur principal */}
   <select
     id="baseConnaissance"
     className="w-full border rounded px-2 py-1 text-gray-900 bg-white"
@@ -43,4 +46,3 @@
     ))}
   </select>
 </div>
-´´´
