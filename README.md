@@ -5,18 +5,19 @@ import * as echarts from 'echarts'
 export default class extends Controller {
 
   static values = {
-    chart: String,
-    target: String,
-    url: String,
     data: Object
   }
 
   connect() {
-    this.getData().then((data) => {
-      this.dataValue = data
-      this.getChart1()
-      this.getChart2()
-    })
+    this.load()
+  }
+
+  async load(params = '') {
+    const data = await this.getData(params)
+    this.dataValue = data
+
+    this.renderChart1()
+    this.renderChart2()
   }
 
   render() {
@@ -24,11 +25,7 @@ export default class extends Controller {
     const formData = new FormData(exportForm)
     const params = new URLSearchParams(formData).toString()
 
-    this.getData(params).then((data) => {
-      this.dataValue = data
-      this.getChart1()
-      this.getChart2()
-    })
+    this.load(params)
 
     this.getKpi(params).then((data) => {
       document.getElementById('totalUsers').innerHTML = data.totalUsers
@@ -39,10 +36,11 @@ export default class extends Controller {
     })
   }
 
-  /* -------------------- GRAPH 1 (NEW METRICS) -------------------- */
+  /* ==================== CHART 1 ==================== */
+  /* Utilisateurs actifs / Messages / Temps réponse */
 
-  getChart1() {
-    const dataSet = this.dataValue
+  renderChart1() {
+    const d = this.dataValue
     const chart = echarts.init(document.getElementById('chart'))
 
     window.addEventListener('resize', () => chart.resize())
@@ -50,89 +48,79 @@ export default class extends Controller {
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: {
-        type: 'scroll',
-        orient: 'horizontal',
-        top: '95%',
-        bottom: 0
+        top: '90%'
       },
       xAxis: {
         type: 'category',
-        data: dataSet.date
+        data: d.date
       },
       yAxis: [
-        {
-          type: 'value',
-          name: 'Count'
-        },
-        {
-          type: 'value',
-          name: 'Avg response time',
-          position: 'right'
-        }
+        { type: 'value', name: 'Count' },
+        { type: 'value', name: 'Seconds' }
       ],
       series: [
         {
           name: 'Active users',
           type: 'bar',
-          data: dataSet.activeUsersPerDay,
+          data: d.activeUsersPerDay,
           color: '#2bf3b6'
         },
         {
-          name: 'Messages per day',
+          name: 'Messages',
           type: 'line',
-          data: dataSet.messagesPerDay,
+          data: d.messagesPerDay,
           color: '#005B50'
         },
         {
           name: 'Avg response time',
           type: 'line',
           yAxisIndex: 1,
-          data: dataSet.avgResponseTimePerDay,
+          data: d.avgResponseTimePerDay,
           color: '#91a9dc'
         }
       ]
     })
   }
 
-  /* -------------------- GRAPH 2 (LEGACY, KEPT) -------------------- */
+  /* ==================== CHART 2 ==================== */
+  /* Connexions / Conversations (legacy conservé) */
 
-  getChart2() {
-    const dataSet = this.dataValue
+  renderChart2() {
+    const d = this.dataValue
     const chart = echarts.init(document.getElementById('chart2'))
 
     window.addEventListener('resize', () => chart.resize())
 
     chart.setOption({
-      tooltip: { trigger: 'item' },
+      tooltip: { trigger: 'axis' },
       legend: {
-        type: 'scroll',
-        orient: 'horizontal',
-        top: '95%',
-        bottom: 0
+        top: '90%'
       },
       xAxis: {
         type: 'category',
-        data: dataSet.date
+        data: d.date
       },
-      yAxis: {},
+      yAxis: {
+        type: 'value'
+      },
       series: [
         {
-          name: 'Connection per day',
+          name: 'Connections',
           type: 'line',
-          data: dataSet.connectionPerDay,
-          color: '#91a9dc'
+          data: d.connectionPerDay,
+          color: '#e9ecef'
         },
         {
-          name: 'Conversation per day',
+          name: 'Conversations',
           type: 'line',
-          data: dataSet.conversationPerDay,
+          data: d.conversationPerDay,
           color: '#005B50'
         }
       ]
     })
   }
 
-  /* -------------------- DATA FETCH -------------------- */
+  /* ==================== DATA ==================== */
 
   async getData(params = '') {
     const response = await fetch('/chart_data?' + params)
@@ -144,4 +132,5 @@ export default class extends Controller {
     return response.json()
   }
 }
+
 ```
