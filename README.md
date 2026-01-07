@@ -1,50 +1,42 @@
+protected function getUsageData(
+    ?\DateTimeInterface $fromDate,
+    ?\DateTimeInterface $toDate,
+    bool $forChart = false
+): array {
+    $messagesPerDay        = $this->messageRepository->totalMessagesPerDay($fromDate, $toDate);
+    $activeUsersPerDay     = $this->messageRepository->activeUsersPerDay($fromDate, $toDate);
+    $avgResponseTimePerDay = $this->messageRepository->averageResponseTimePerDay($fromDate, $toDate);
 
-    public function activeUsersPerDay($from = null, $to = null): array
-    {
-        $qb = $this->createQueryBuilder('m')
-            ->select('COUNT(DISTINCT conversation.user) AS count')
-            ->addSelect("DATE_FORMAT(m.createdAt, '%d/%m/%Y') AS day")
-            ->join('m.conversation', 'conversation')
-            ->join('conversation.user', 'user')
-            ->andWhere('user.isExcludedForStats = false')
-            ->groupBy('day')
-            ->orderBy('day', 'ASC');
+    $data = [
+        'messagesPerDay'        => $messagesPerDay,
+        'activeUsersPerDay'     => $activeUsersPerDay,
+        'avgResponseTimePerDay' => $avgResponseTimePerDay,
+    ];
 
-        if ($from !== null) {
-            $qb->andWhere('m.createdAt >= :from')
-            ->setParameter('from', $from);
+    // Initialisation du tableau de retour par jour
+    $return = [];
+
+    if ($fromDate && $toDate) {
+        $current = clone $fromDate;
+
+        while ($current <= $toDate) {
+            $day = $current->format('d/m/Y');
+
+            $return[$day] = [
+                'messagesPerDay'        => 0,
+                'activeUsersPerDay'     => 0,
+                'avgResponseTimePerDay' => 0,
+                'conversationPerDay'    => 0, // requis par prepareData()
+                'messagesPerConversation' => 0, // requis aussi
+            ];
+
+            $current = (clone $current)->modify('+1 day');
         }
-
-        if ($to !== null) {
-            $qb->andWhere('m.createdAt <= :to')
-            ->setParameter('to', $to);
-        }
-
-        return $qb->getQuery()->getResult();
     }
 
-    public function averageResponseTimePerDay($from = null, $to = null): array
-    {
-        $qb = $this->createQueryBuilder('m')
-            ->select('AVG(m.timeToAnswer) AS count')
-            ->addSelect("DATE_FORMAT(m.createdAt, '%d/%m/%Y') AS day")
-            ->join('m.conversation', 'conversation')
-            ->join('conversation.user', 'user')
-            ->andWhere('m.timeToAnswer IS NOT NULL')
-            ->andWhere('user.isExcludedForStats = false')
-            ->groupBy('day')
-            ->orderBy('day', 'ASC');
-
-        if ($from !== null) {
-            $qb->andWhere('m.createdAt >= :from')
-            ->setParameter('from', $from);
-        }
-
-        if ($to !== null) {
-            $qb->andWhere('m.createdAt <= :to')
-            ->setParameter('to', $to);
-        }
-
-        return $qb->getQuery()->getResult();
+    if ($forChart) {
+        return $this->prepareDataForChart($data, $return);
     }
 
+    return $this->prepareData($data, $return);
+}
