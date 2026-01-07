@@ -3,136 +3,93 @@ import { Controller } from '@hotwired/stimulus'
 import * as echarts from 'echarts'
 
 export default class extends Controller {
+  static targets = ['chart1', 'chart2']
 
-  static values = {
-    data: Object
+  connect() {
+    this.load()
   }
 
-  async connect() {
-    await this.load()
-  }
-
-  async load(params = '') {
-    const data = await this.getData(params)
+  async load() {
+    const data = await this.getData()
     this.dataValue = data
 
     this.renderChart1()
     this.renderChart2()
   }
 
-  /* -------------------- CHART 1 -------------------- */
-  // Ticket-compliant:
-  // - Bar: active users
-  // - Line: messages
-  // - Line: avg response time
+  /* ---------- CHART 1 ---------- */
 
   renderChart1() {
-    const el = document.getElementById('chart')
-    if (!el) {
-      console.warn('[Chart1] DOM element #chart not found')
+    if (!this.hasChart1Target) {
+      console.warn('[Chart1] target not found')
       return
     }
 
-    // IMPORTANT: éviter "already initialized"
-    if (echarts.getInstanceByDom(el)) {
-      echarts.dispose(el)
-    }
+    const el = this.chart1Target
+    const existing = echarts.getInstanceByDom(el)
+    if (existing) existing.dispose()
 
     const chart = echarts.init(el)
-    window.addEventListener('resize', () => chart.resize())
-
-    const d = this.dataValue
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: {
-        type: 'scroll',
-        bottom: 0
-      },
-      xAxis: {
-        type: 'category',
-        data: d.date
-      },
+      legend: { top: '95%' },
+      xAxis: { type: 'category', data: this.dataValue.date },
       yAxis: [
-        {
-          type: 'value',
-          name: 'Count'
-        },
-        {
-          type: 'value',
-          name: 'Avg response time',
-          position: 'right'
-        }
+        { type: 'value', name: 'Utilisateurs / Messages' },
+        { type: 'value', name: 'Temps de réponse (s)' }
       ],
       series: [
         {
-          name: 'Active users',
+          name: 'Utilisateurs actifs',
           type: 'bar',
-          data: d.activeUsersPerDay
+          data: this.dataValue.userCount
         },
         {
           name: 'Messages',
           type: 'line',
-          data: d.messagesPerDay
+          data: this.dataValue.messagesPerDay,
+          yAxisIndex: 0,
+          smooth: true
         },
         {
-          name: 'Avg response time',
+          name: 'Temps de réponse moyen',
           type: 'line',
+          data: this.dataValue.avgResponseTimePerDay,
           yAxisIndex: 1,
-          data: d.avgResponseTimePerDay
+          smooth: true
         }
       ]
     })
   }
 
-  /* -------------------- CHART 2 -------------------- */
-  // Conservée telle quelle
+  /* ---------- CHART 2 ---------- */
 
   renderChart2() {
-    const el = document.getElementById('chart2')
-    if (!el) {
-      console.warn('[Chart2] DOM element #chart2 not found')
+    if (!this.hasChart2Target) {
+      console.warn('[Chart2] target not found')
       return
     }
 
-    if (echarts.getInstanceByDom(el)) {
-      echarts.dispose(el)
-    }
+    const el = this.chart2Target
+    const existing = echarts.getInstanceByDom(el)
+    if (existing) existing.dispose()
 
     const chart = echarts.init(el)
-    window.addEventListener('resize', () => chart.resize())
-
-    const d = this.dataValue
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: {
-        type: 'scroll',
-        bottom: 0
-      },
-      xAxis: {
-        type: 'category',
-        data: d.date
-      },
-      yAxis: {
-        type: 'value'
-      },
+      xAxis: { type: 'category', data: this.dataValue.date },
+      yAxis: { type: 'value' },
       series: [
         {
-          name: 'Connections per day',
+          name: 'Connexions',
           type: 'line',
-          data: d.connectionPerDay
-        },
-        {
-          name: 'Conversations per day',
-          type: 'line',
-          data: d.conversationPerDay
+          data: this.dataValue.connectionPerDay
         }
       ]
     })
   }
-
-  /* -------------------- DATA -------------------- */
 
   async getData(params = '') {
     const response = await fetch('/chart_data?' + params)
@@ -143,15 +100,23 @@ export default class extends Controller {
 ```
 
 ```
-<div {{ stimulus_controller('chart') }}>
-
-  <div class="card shadow rounded-3 p-3 mb-3">
-    <div data-chart-target="chart" style="height:400px"></div>
+<div
+  data-controller="chart"
+  data-chart-target="container"
+  class="justify-content-center container pb-2 mt-3"
+>
+  <div class="card rounded-3 pb-3 my-3 shadow">
+    <div
+      data-chart-target="chart1"
+      style="height: 400px;"
+    ></div>
   </div>
 
-  <div class="card shadow rounded-3 p-3">
-    <div data-chart-target="chart2" style="height:400px"></div>
+  <div class="card shadow rounded-3 pb-3">
+    <div
+      data-chart-target="chart2"
+      style="height: 400px;"
+    ></div>
   </div>
-
 </div>
 ```
