@@ -3,12 +3,19 @@ import { Controller } from '@hotwired/stimulus'
 import * as echarts from 'echarts'
 
 export default class extends Controller {
-
+  static targets = ['chart', 'chart2']
   static values = {
     data: Object
   }
 
+  chartInstance = null
+  chart2Instance = null
+
   async connect() {
+    await this.load()
+  }
+
+  async render() {
     await this.load()
   }
 
@@ -23,86 +30,88 @@ export default class extends Controller {
   /* -------------------- CHART 1 -------------------- */
 
   renderChart1() {
-    const el = document.getElementById('chart')
-    if (!el) {
-      console.warn('[Chart1] DOM element #chart not found')
+    if (!this.hasChartTarget) {
+      console.warn('[Chart1] target not found')
       return
     }
 
-    const chart = echarts.init(el)
-    window.addEventListener('resize', () => chart.resize())
+    if (this.chartInstance) {
+      this.chartInstance.dispose()
+    }
 
-    const d = this.dataValue
+    this.chartInstance = echarts.init(this.chartTarget)
 
-    chart.setOption({
+    this.chartInstance.setOption({
       tooltip: { trigger: 'axis' },
-      legend: {
-        type: 'scroll',
-        bottom: 0
-      },
+      legend: { bottom: 0 },
       xAxis: {
         type: 'category',
-        data: d.date
+        data: this.dataValue.date
       },
-      yAxis: {},
+      yAxis: { type: 'value' },
       series: [
         {
-          name: 'Messages per day',
+          name: 'Liked responses',
           type: 'bar',
-          data: d.messagesPerDay
+          stack: 'responses',
+          data: this.dataValue.likedResponses,
+          itemStyle: { color: '#2bf3b6' }
         },
         {
-          name: 'Active users per day',
+          name: 'Disliked responses',
           type: 'bar',
-          data: d.activeUsersPerDay
+          stack: 'responses',
+          data: this.dataValue.dislikedResponses,
+          itemStyle: { color: '#e9ecef' }
         },
         {
-          name: 'Avg response time',
+          name: 'Conversation per day',
           type: 'line',
-          data: d.avgResponseTimePerDay
+          data: this.dataValue.conversationPerDay,
+          itemStyle: { color: '#005B50' }
         }
       ]
     })
+
+    window.addEventListener('resize', () => this.chartInstance.resize())
   }
 
   /* -------------------- CHART 2 -------------------- */
 
   renderChart2() {
-    const el = document.getElementById('chart2')
-    if (!el) {
-      console.warn('[Chart2] DOM element #chart2 not found')
-      return
+    if (!this.hasChart2Target) return
+
+    if (this.chart2Instance) {
+      this.chart2Instance.dispose()
     }
 
-    const chart = echarts.init(el)
-    window.addEventListener('resize', () => chart.resize())
+    this.chart2Instance = echarts.init(this.chart2Target)
 
-    const d = this.dataValue
-
-    chart.setOption({
+    this.chart2Instance.setOption({
       tooltip: { trigger: 'axis' },
-      legend: {
-        type: 'scroll',
-        bottom: 0
-      },
+      legend: { bottom: 0 },
       xAxis: {
         type: 'category',
-        data: d.date
+        data: this.dataValue.date
       },
-      yAxis: {},
+      yAxis: { type: 'value' },
       series: [
         {
           name: 'Connections per day',
           type: 'line',
-          data: d.connectionPerDay
+          data: this.dataValue.connectionPerDay,
+          itemStyle: { color: '#91a9dc' }
         },
         {
           name: 'Conversations per day',
           type: 'line',
-          data: d.conversationPerDay
+          data: this.dataValue.conversationPerDay,
+          itemStyle: { color: '#005B50' }
         }
       ]
     })
+
+    window.addEventListener('resize', () => this.chart2Instance.resize())
   }
 
   /* -------------------- DATA -------------------- */
@@ -112,4 +121,19 @@ export default class extends Controller {
     return response.json()
   }
 }
+
+```
+
+```
+<div {{ stimulus_controller('chart') }}>
+
+  <div class="card shadow rounded-3 p-3 mb-3">
+    <div data-chart-target="chart" style="height:400px"></div>
+  </div>
+
+  <div class="card shadow rounded-3 p-3">
+    <div data-chart-target="chart2" style="height:400px"></div>
+  </div>
+
+</div>
 ```
