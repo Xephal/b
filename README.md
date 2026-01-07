@@ -3,19 +3,12 @@ import { Controller } from '@hotwired/stimulus'
 import * as echarts from 'echarts'
 
 export default class extends Controller {
-  static targets = ['chart', 'chart2']
+
   static values = {
     data: Object
   }
 
-  chartInstance = null
-  chart2Instance = null
-
   async connect() {
-    await this.load()
-  }
-
-  async render() {
     await this.load()
   }
 
@@ -28,90 +21,115 @@ export default class extends Controller {
   }
 
   /* -------------------- CHART 1 -------------------- */
+  // Ticket-compliant:
+  // - Bar: active users
+  // - Line: messages
+  // - Line: avg response time
 
   renderChart1() {
-    if (!this.hasChartTarget) {
-      console.warn('[Chart1] target not found')
+    const el = document.getElementById('chart')
+    if (!el) {
+      console.warn('[Chart1] DOM element #chart not found')
       return
     }
 
-    if (this.chartInstance) {
-      this.chartInstance.dispose()
+    // IMPORTANT: éviter "already initialized"
+    if (echarts.getInstanceByDom(el)) {
+      echarts.dispose(el)
     }
 
-    this.chartInstance = echarts.init(this.chartTarget)
+    const chart = echarts.init(el)
+    window.addEventListener('resize', () => chart.resize())
 
-    this.chartInstance.setOption({
+    const d = this.dataValue
+
+    chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { bottom: 0 },
+      legend: {
+        type: 'scroll',
+        bottom: 0
+      },
       xAxis: {
         type: 'category',
-        data: this.dataValue.date
+        data: d.date
       },
-      yAxis: { type: 'value' },
+      yAxis: [
+        {
+          type: 'value',
+          name: 'Count'
+        },
+        {
+          type: 'value',
+          name: 'Avg response time',
+          position: 'right'
+        }
+      ],
       series: [
         {
-          name: 'Liked responses',
+          name: 'Active users',
           type: 'bar',
-          stack: 'responses',
-          data: this.dataValue.likedResponses,
-          itemStyle: { color: '#2bf3b6' }
+          data: d.activeUsersPerDay
         },
         {
-          name: 'Disliked responses',
-          type: 'bar',
-          stack: 'responses',
-          data: this.dataValue.dislikedResponses,
-          itemStyle: { color: '#e9ecef' }
-        },
-        {
-          name: 'Conversation per day',
+          name: 'Messages',
           type: 'line',
-          data: this.dataValue.conversationPerDay,
-          itemStyle: { color: '#005B50' }
+          data: d.messagesPerDay
+        },
+        {
+          name: 'Avg response time',
+          type: 'line',
+          yAxisIndex: 1,
+          data: d.avgResponseTimePerDay
         }
       ]
     })
-
-    window.addEventListener('resize', () => this.chartInstance.resize())
   }
 
   /* -------------------- CHART 2 -------------------- */
+  // Conservée telle quelle
 
   renderChart2() {
-    if (!this.hasChart2Target) return
-
-    if (this.chart2Instance) {
-      this.chart2Instance.dispose()
+    const el = document.getElementById('chart2')
+    if (!el) {
+      console.warn('[Chart2] DOM element #chart2 not found')
+      return
     }
 
-    this.chart2Instance = echarts.init(this.chart2Target)
+    if (echarts.getInstanceByDom(el)) {
+      echarts.dispose(el)
+    }
 
-    this.chart2Instance.setOption({
+    const chart = echarts.init(el)
+    window.addEventListener('resize', () => chart.resize())
+
+    const d = this.dataValue
+
+    chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { bottom: 0 },
+      legend: {
+        type: 'scroll',
+        bottom: 0
+      },
       xAxis: {
         type: 'category',
-        data: this.dataValue.date
+        data: d.date
       },
-      yAxis: { type: 'value' },
+      yAxis: {
+        type: 'value'
+      },
       series: [
         {
           name: 'Connections per day',
           type: 'line',
-          data: this.dataValue.connectionPerDay,
-          itemStyle: { color: '#91a9dc' }
+          data: d.connectionPerDay
         },
         {
           name: 'Conversations per day',
           type: 'line',
-          data: this.dataValue.conversationPerDay,
-          itemStyle: { color: '#005B50' }
+          data: d.conversationPerDay
         }
       ]
     })
-
-    window.addEventListener('resize', () => this.chart2Instance.resize())
   }
 
   /* -------------------- DATA -------------------- */
