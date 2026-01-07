@@ -14,7 +14,8 @@ export default class extends Controller {
   connect() {
     this.getData().then((data) => {
       this.dataValue = data
-      this.getChart()
+      this.getChart1()
+      this.getChart2()
     })
   }
 
@@ -25,7 +26,8 @@ export default class extends Controller {
 
     this.getData(params).then((data) => {
       this.dataValue = data
-      this.getChart()
+      this.getChart1()
+      this.getChart2()
     })
 
     this.getKpi(params).then((data) => {
@@ -37,9 +39,9 @@ export default class extends Controller {
     })
   }
 
-  /* -------------------- GRAPH -------------------- */
+  /* -------------------- GRAPH 1 (NEW METRICS) -------------------- */
 
-  getChart() {
+  getChart1() {
     const dataSet = this.dataValue
     const chart = echarts.init(document.getElementById('chart'))
 
@@ -87,6 +89,44 @@ export default class extends Controller {
           yAxisIndex: 1,
           data: dataSet.avgResponseTimePerDay,
           color: '#91a9dc'
+        }
+      ]
+    })
+  }
+
+  /* -------------------- GRAPH 2 (LEGACY, KEPT) -------------------- */
+
+  getChart2() {
+    const dataSet = this.dataValue
+    const chart = echarts.init(document.getElementById('chart2'))
+
+    window.addEventListener('resize', () => chart.resize())
+
+    chart.setOption({
+      tooltip: { trigger: 'item' },
+      legend: {
+        type: 'scroll',
+        orient: 'horizontal',
+        top: '95%',
+        bottom: 0
+      },
+      xAxis: {
+        type: 'category',
+        data: dataSet.date
+      },
+      yAxis: {},
+      series: [
+        {
+          name: 'Connection per day',
+          type: 'line',
+          data: dataSet.connectionPerDay,
+          color: '#91a9dc'
+        },
+        {
+          name: 'Conversation per day',
+          type: 'line',
+          data: dataSet.conversationPerDay,
+          color: '#005B50'
         }
       ]
     })
