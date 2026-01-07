@@ -144,21 +144,14 @@ export default class extends Controller {
 ```
 <div
   data-controller="chart"
-  data-chart-target="container"
   class="justify-content-center container pb-2 mt-3"
 >
-  <div class="card rounded-3 pb-3 my-3 shadow">
-    <div
-      data-chart-target="chart1"
-      style="height: 400px;"
-    ></div>
-  </div>
+    <div class="card rounded-3 pb-3 my-3 shadow">
+        <div id="chart" style="height: 400px;"></div>
+    </div>
 
-  <div class="card shadow rounded-3 pb-3">
-    <div
-      data-chart-target="chart2"
-      style="height: 400px;"
-    ></div>
-  </div>
+    <div class="card shadow rounded-3 pb-3">
+        <div id="chart2" style="height: 400px;"></div>
+    </div>
 </div>
 ```
