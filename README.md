@@ -1,3 +1,4 @@
+```
 protected function getUsageData(
     ?\DateTimeInterface $fromDate,
     ?\DateTimeInterface $toDate,
@@ -40,3 +41,4 @@ protected function getUsageData(
 
     return $this->prepareData($data, $return);
 }
+```
