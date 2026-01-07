@@ -3,100 +3,142 @@ import { Controller } from '@hotwired/stimulus'
 import * as echarts from 'echarts'
 
 export default class extends Controller {
-  static targets = ['chart1', 'chart2']
 
-  connect() {
-    this.load()
+  static values = {
+    data: Object
   }
 
-  async load() {
-    const data = await this.getData()
+  async connect() {
+    await this.load()
+  }
+
+  async load(params = '') {
+    const data = await this.getData(params)
     this.dataValue = data
 
     this.renderChart1()
     this.renderChart2()
   }
 
-  /* ---------- CHART 1 ---------- */
+  /* -------------------- CHART 1 -------------------- */
+  // Ticket:
+  // - Active users per day (bar)
+  // - Messages per day (line)
+  // - Avg response time per day (line)
 
   renderChart1() {
-    if (!this.hasChart1Target) {
-      console.warn('[Chart1] target not found')
+    const el = document.getElementById('chart')
+    if (!el) {
+      console.warn('[Chart1] DOM element #chart not found')
       return
     }
 
-    const el = this.chart1Target
     const existing = echarts.getInstanceByDom(el)
-    if (existing) existing.dispose()
+    if (existing) {
+      existing.dispose()
+    }
 
     const chart = echarts.init(el)
+    window.addEventListener('resize', () => chart.resize())
+
+    const d = this.dataValue
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { top: '95%' },
-      xAxis: { type: 'category', data: this.dataValue.date },
+      legend: {
+        type: 'scroll',
+        bottom: 0
+      },
+      xAxis: {
+        type: 'category',
+        data: d.date
+      },
       yAxis: [
-        { type: 'value', name: 'Utilisateurs / Messages' },
-        { type: 'value', name: 'Temps de réponse (s)' }
+        { type: 'value' },
+        { type: 'value' }
       ],
       series: [
         {
-          name: 'Utilisateurs actifs',
+          name: 'Active users per day',
           type: 'bar',
-          data: this.dataValue.userCount
+          data: d.activeUsersPerDay,
+          color: '#2bf3b6'
         },
         {
-          name: 'Messages',
+          name: 'Messages per day',
           type: 'line',
-          data: this.dataValue.messagesPerDay,
           yAxisIndex: 0,
-          smooth: true
+          data: d.messagesPerDay,
+          color: '#005B50'
         },
         {
-          name: 'Temps de réponse moyen',
+          name: 'Avg response time',
           type: 'line',
-          data: this.dataValue.avgResponseTimePerDay,
           yAxisIndex: 1,
-          smooth: true
+          data: d.avgResponseTimePerDay,
+          color: '#91a9dc'
         }
       ]
     })
   }
 
-  /* ---------- CHART 2 ---------- */
+  /* -------------------- CHART 2 -------------------- */
+  // Historique conservé:
+  // - Connection per day
+  // - Conversation per day
 
   renderChart2() {
-    if (!this.hasChart2Target) {
-      console.warn('[Chart2] target not found')
+    const el = document.getElementById('chart2')
+    if (!el) {
+      console.warn('[Chart2] DOM element #chart2 not found')
       return
     }
 
-    const el = this.chart2Target
     const existing = echarts.getInstanceByDom(el)
-    if (existing) existing.dispose()
+    if (existing) {
+      existing.dispose()
+    }
 
     const chart = echarts.init(el)
+    window.addEventListener('resize', () => chart.resize())
+
+    const d = this.dataValue
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      xAxis: { type: 'category', data: this.dataValue.date },
-      yAxis: { type: 'value' },
+      legend: {
+        type: 'scroll',
+        bottom: 0
+      },
+      xAxis: {
+        type: 'category',
+        data: d.date
+      },
+      yAxis: {},
       series: [
         {
-          name: 'Connexions',
+          name: 'Connection per day',
           type: 'line',
-          data: this.dataValue.connectionPerDay
+          data: d.connectionPerDay,
+          color: '#91a9dc'
+        },
+        {
+          name: 'Conversation per day',
+          type: 'line',
+          data: d.conversationPerDay,
+          color: '#005B50'
         }
       ]
     })
   }
+
+  /* -------------------- DATA -------------------- */
 
   async getData(params = '') {
     const response = await fetch('/chart_data?' + params)
     return response.json()
   }
 }
-
 ```
 
 ```
