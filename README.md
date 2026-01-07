@@ -8,8 +8,8 @@ export default class extends Controller {
     data: Object
   }
 
-  connect() {
-    this.load()
+  async connect() {
+    await this.load()
   }
 
   async load(params = '') {
@@ -20,117 +20,96 @@ export default class extends Controller {
     this.renderChart2()
   }
 
-  render() {
-    const exportForm = document.getElementById('export-usage-data')
-    const formData = new FormData(exportForm)
-    const params = new URLSearchParams(formData).toString()
-
-    this.load(params)
-
-    this.getKpi(params).then((data) => {
-      document.getElementById('totalUsers').innerHTML = data.totalUsers
-      document.getElementById('totalConversations').innerHTML = data.totalConversations
-      document.getElementById('averageMessagesPerConversation').innerHTML = data.averageMessagesPerConversation
-      document.getElementById('averageTimeToAnswer').innerHTML = data.averageTimeToAnswer
-      document.getElementById('percentageLikedMessages').innerHTML = data.percentageLikedMessages
-    })
-  }
-
-  /* ==================== CHART 1 ==================== */
-  /* Utilisateurs actifs / Messages / Temps réponse */
+  /* -------------------- CHART 1 -------------------- */
 
   renderChart1() {
-    const d = this.dataValue
-    const chart = echarts.init(document.getElementById('chart'))
+    const el = document.getElementById('chart')
+    if (!el) {
+      console.warn('[Chart1] DOM element #chart not found')
+      return
+    }
 
+    const chart = echarts.init(el)
     window.addEventListener('resize', () => chart.resize())
+
+    const d = this.dataValue
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: {
-        top: '90%'
+        type: 'scroll',
+        bottom: 0
       },
       xAxis: {
         type: 'category',
         data: d.date
       },
-      yAxis: [
-        { type: 'value', name: 'Count' },
-        { type: 'value', name: 'Seconds' }
-      ],
+      yAxis: {},
       series: [
         {
-          name: 'Active users',
+          name: 'Messages per day',
           type: 'bar',
-          data: d.activeUsersPerDay,
-          color: '#2bf3b6'
+          data: d.messagesPerDay
         },
         {
-          name: 'Messages',
-          type: 'line',
-          data: d.messagesPerDay,
-          color: '#005B50'
+          name: 'Active users per day',
+          type: 'bar',
+          data: d.activeUsersPerDay
         },
         {
           name: 'Avg response time',
           type: 'line',
-          yAxisIndex: 1,
-          data: d.avgResponseTimePerDay,
-          color: '#91a9dc'
+          data: d.avgResponseTimePerDay
         }
       ]
     })
   }
 
-  /* ==================== CHART 2 ==================== */
-  /* Connexions / Conversations (legacy conservé) */
+  /* -------------------- CHART 2 -------------------- */
 
   renderChart2() {
-    const d = this.dataValue
-    const chart = echarts.init(document.getElementById('chart2'))
+    const el = document.getElementById('chart2')
+    if (!el) {
+      console.warn('[Chart2] DOM element #chart2 not found')
+      return
+    }
 
+    const chart = echarts.init(el)
     window.addEventListener('resize', () => chart.resize())
+
+    const d = this.dataValue
 
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: {
-        top: '90%'
+        type: 'scroll',
+        bottom: 0
       },
       xAxis: {
         type: 'category',
         data: d.date
       },
-      yAxis: {
-        type: 'value'
-      },
+      yAxis: {},
       series: [
         {
-          name: 'Connections',
+          name: 'Connections per day',
           type: 'line',
-          data: d.connectionPerDay,
-          color: '#e9ecef'
+          data: d.connectionPerDay
         },
         {
-          name: 'Conversations',
+          name: 'Conversations per day',
           type: 'line',
-          data: d.conversationPerDay,
-          color: '#005B50'
+          data: d.conversationPerDay
         }
       ]
     })
   }
 
-  /* ==================== DATA ==================== */
+  /* -------------------- DATA -------------------- */
 
   async getData(params = '') {
     const response = await fetch('/chart_data?' + params)
     return response.json()
   }
-
-  async getKpi(params = '') {
-    const response = await fetch('/kpi_data?' + params)
-    return response.json()
-  }
 }
-
 ```
