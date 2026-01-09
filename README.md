@@ -1,156 +1,162 @@
-Maintenant, on arrête d’empiler et on fait circuler le courant.
-Tu as le moteur. Il faut brancher la prise. Étape suivante unique et logique :
+aTrès bien. Là on fait le reset cérébral que Doctrine t’a forcé à faire.
+Voici TOUS les bouts de code à mettre à jour, fichier par fichier, sans trous, pour que :
+	•	plus aucun IN ()
+	•	plus aucun DAYOFWEEK inconnu
+	•	plus aucun assert($lookahead !== null)
+	•	plus aucune ambiguïté de type
 
-👉 exposer le use case via le controller admin.
-Pas de front, pas de Twig cosmétique, juste un endpoint propre qui prouve que tout ce qu’on a fait tient debout.
-
-⸻
-
-🧭 Ce qu’on fait maintenant (et seulement ça)
-
-Objectif
-	•	Valider tout le pipeline
-	•	Depuis la Request
-	•	Jusqu’au DTO final
-	•	Sans EasyAdmin, sans React, sans décor
+Tu appliques exactement ça, dans cet ordre, et on n’en parle plus.
 
 ⸻
 
-📄 Étape 1 — Modifier DashboardController
+1️⃣ DashboardController.php
 
 📁 src/Controller/Admin/DashboardController.php
 
-On ajoute une action dédiée aux métriques users.
+🔁 À REMPLACER — normalisation de weekdays
+
+❌ Ancien code (fragile)
+
+$weekdays = $request->query->all('weekdays');
+$weekdays = $weekdays !== [] ? array_map('intval', $weekdays) : null;
+
+✅ Nouveau code (robuste, définitif)
+
+$weekdaysParam = $request->query->get('weekdays');
+
+if ($weekdaysParam === null || $weekdaysParam === '') {
+    $weekdays = null;
+} elseif (is_array($weekdaysParam)) {
+    $weekdays = array_filter(array_map('intval', $weekdaysParam));
+    $weekdays = $weekdays !== [] ? $weekdays : null;
+} else {
+    $weekdays = array_filter(
+        array_map('intval', explode(',', $weekdaysParam))
+    );
+    $weekdays = $weekdays !== [] ? $weekdays : null;
+}
+
+🎯 Résultat garanti :
+	•	$weekdays === null
+	•	OU $weekdays = int[] non vide
 
 ⸻
 
-✅ Action controller exacte (copier-coller)
+2️⃣ UserRepository.php
 
-<?php
+📁 src/Repository/UserRepository.php
 
-declare(strict_types=1);
+🔁 À METTRE À JOUR — clause weekday DQL
 
-namespace App\Controller\Admin;
+❌ Ancien code (cassé)
 
-use App\Application\Admin\UseCase\GetUserMetrics;
-use App\Application\Admin\UseCase\GetUserMetricsHandler;
-use App\Application\Common\Period\PeriodResolver;
-use DateTimeImmutable;
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Routing\Annotation\Route;
+->andWhere('DAYOFWEEK(u.createdAt) IN (:weekdays)')
 
-final class DashboardController extends AbstractController
-{
-    #[Route('/admin/kpi/users', name: 'admin_kpi_users', methods: ['GET'])]
-    public function userMetrics(
-        Request $request,
-        PeriodResolver $periodResolver,
-        GetUserMetricsHandler $handler,
-    ): JsonResponse {
-        // 1️⃣ Résoudre les périodes (courante + comparaison)
-        $resolvedPeriod = $periodResolver->resolve(
-            $request,
-            new DateTimeImmutable()
-        );
+✅ Nouveau code (DQL valide)
 
-        // 2️⃣ Lire le filtre weekday (optionnel)
-        $weekdays = $request->query->all('weekdays');
-        $weekdays = $weekdays !== [] ? array_map('intval', $weekdays) : null;
+->andWhere("FUNCTION('DAYOFWEEK', u.createdAt) IN (:weekdays)")
 
-        // 3️⃣ Exécuter le use case
-        $result = $handler->handle(
-            new GetUserMetrics(
-                $resolvedPeriod,
-                $weekdays
-            )
-        );
 
-        // 4️⃣ Retour brut (on veut voir la vérité)
-        return $this->json($result);
-    }
+⸻
+
+🔁 À METTRE À JOUR — condition de garde
+
+❌ Ancien code (pas assez strict)
+
+if (!empty($weekdays)) {
+
+✅ Nouveau code (anti IN ())
+
+if ($weekdays !== null && count($weekdays) > 0) {
+
+
+⸻
+
+🔁 Code final à avoir dans UserRepository
+
+if ($weekdays !== null && count($weekdays) > 0) {
+    $qb
+        ->andWhere("FUNCTION('DAYOFWEEK', u.createdAt) IN (:weekdays)")
+        ->setParameter('weekdays', $this->mapWeekdaysToSql($weekdays));
 }
 
 
 ⸻
 
-🧠 Pourquoi cette action est “propre”
+3️⃣ MessageRepository.php
 
-✔ Le controller orchestre, point
-	•	lit la Request
-	•	appelle le resolver
-	•	appelle le handler
-	•	retourne le résultat
+📁 src/Repository/MessageRepository.php
 
-Aucune logique métier.
-Aucune logique SQL.
-Aucune logique UI.
+👉 Exactement les mêmes corrections, mais sur m.createdAt
 
 ⸻
 
-✔ Tu peux tester immédiatement
+🔁 DQL weekday
 
-Appelle dans ton navigateur ou Postman :
+->andWhere("FUNCTION('DAYOFWEEK', m.createdAt) IN (:weekdays)")
 
-/admin/kpi/users
-
-ou avec filtres :
-
-/admin/kpi/users?date_from=2025-01-10&date_to=2025-01-18&weekdays[]=1&weekdays[]=2
-
-👉 Tu dois obtenir :
-	•	les counts
-	•	les évolutions %
-	•	les périodes courante / comparaison
 
 ⸻
 
-🚨 Si quelque chose ne marche pas maintenant
+🔁 Condition de garde
 
-C’est forcément :
-	•	un mapping Doctrine
-	•	un champ createdAt
-	•	une relation mal nommée
+if ($weekdays !== null && count($weekdays) > 0) {
 
-👉 Et c’est parfait, parce que :
-	•	tout est localisé
-	•	rien n’est caché
-	•	pas de front pour brouiller les pistes
 
 ⸻
 
-🧪 Étape de validation (à faire avant de continuer)
-	•	endpoint répond
-	•	JSON cohérent
-	•	périodes correctes
-	•	évolution logique
-	•	aucun warning PHP
+🔁 Code final à avoir dans MessageRepository
+
+if ($weekdays !== null && count($weekdays) > 0) {
+    $qb
+        ->andWhere("FUNCTION('DAYOFWEEK', m.createdAt) IN (:weekdays)")
+        ->setParameter('weekdays', $this->mapWeekdaysToSql($weekdays));
+}
+
 
 ⸻
 
-🧭 Et après seulement
+4️⃣ (OPTIONNEL MAIS RECOMMANDÉ)
 
-Quand ce endpoint est validé :
+Sécuriser getSingleScalarResult()
 
-Étape suivante possible
+Si tu veux être blindé contre les jeux de données vides :
 
-👉 Afficher la période de comparaison sous le date picker (Twig)
+🔁 Remplacer
 
-Puis seulement après :
-	•	composant React
-	•	binding avec Stimulus
-	•	polish UI
+return (int) $qb->getQuery()->getSingleScalarResult();
+
+✅ Par
+
+$result = $qb->getQuery()->getOneOrNullResult();
+
+return $result !== null ? (int) array_values($result)[0] : 0;
+
+Pas obligatoire si les guards sont bien en place, mais ça rend Doctrine moins susceptible.
 
 ⸻
 
-Verdict honnête
+5️⃣ CHECKLIST FINALE (à cocher)
+	•	DashboardController normalise weekdays
+	•	weekdays est toujours null ou int[] non vide
+	•	FUNCTION('DAYOFWEEK', …) utilisé partout
+	•	AUCUN IN () possible
+	•	Même logique dans User + Message repositories
+	•	/admin/kpi/users répond sans erreur
 
-Tu es exactement au point où beaucoup arrêtent trop tôt.
-Toi, tu fais circuler le flux jusqu’au bout. C’est bien.
+⸻
 
-Dis-moi :
-	•	ce que retourne l’endpoint
-	•	ou l’erreur exacte si ça casse
+🧠 Verdict
 
-Et on corrige chirurgicalement.
+Tu viens de traverser le triangle des Bermudes Doctrine :
+	•	types HTTP
+	•	DQL vs SQL
+	•	paramètres conditionnels
+
+Si ça marche maintenant, ça marchera toujours.
+
+👉 Dis-moi juste :
+	•	“OK ça marche”
+	•	ou colle le JSON retourné
+
+Après ça, on passe au Twig / affichage période / React, qui va te sembler ridiculement simple après ce cirque.
