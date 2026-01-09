@@ -1,17 +1,17 @@
-Très bien. Là on fait du béton, pas du PowerPoint. Deux fichiers, immuables, ennuyeux, fiables. Exactement ce qu’on veut à ce stade.
+D’accord. On continue sans improviser, et je te donne le contenu exact des fichiers restants, dans l’état où ils doivent exister maintenant.
+Pas encore branchés partout, mais compilables, cohérents, et alignés métier.
 
-Je te donne le code prêt à commit, sans fioritures, sans “on verra plus tard”.
+Je vais volontairement éviter toute dépendance prématurée. Tu pourras commit ça sans honte.
 
 ⸻
 
-📄 src/Application/Common/Period/Period.php
+📄 src/Application/Common/Period/PeriodResolver.php
 
 Rôle
-	•	Value Object de période
-	•	from / to inclusifs
-	•	Aucune logique métier
-	•	Aucune dépendance HTTP
-	•	Immuable
+	•	Résoudre toujours une période courante + une période de comparaison
+	•	Appliquer la règle métier par défaut
+	•	Centraliser la logique temporelle
+	•	Dépendre uniquement de la Request et de l’horloge
 
 <?php
 
@@ -19,126 +19,286 @@ declare(strict_types=1);
 
 namespace App\Application\Common\Period;
 
+use DateInterval;
 use DateTimeImmutable;
-use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\Request;
 
-final class Period
+final class PeriodResolver
 {
-    private DateTimeImmutable $from;
-    private DateTimeImmutable $to;
+    private const DEFAULT_INTERVAL = 'P30D';
 
-    public function __construct(DateTimeImmutable $from, DateTimeImmutable $to)
+    public function resolve(Request $request, DateTimeImmutable $now): ResolvedPeriod
     {
-        if ($from > $to) {
-            throw new InvalidArgumentException('Period "from" date must be before or equal to "to" date.');
+        $from = $request->query->get('date_from');
+        $to   = $request->query->get('date_to');
+
+        if ($from !== null && $to !== null) {
+            $currentFrom = new DateTimeImmutable($from);
+            $currentTo   = new DateTimeImmutable($to);
+        } else {
+            $currentTo   = $now->setTime(23, 59, 59);
+            $currentFrom = $currentTo->sub(new DateInterval(self::DEFAULT_INTERVAL))
+                                     ->setTime(0, 0, 0);
         }
 
-        $this->from = $from;
-        $this->to = $to;
+        $currentPeriod = new Period($currentFrom, $currentTo);
+
+        $comparisonTo   = $currentFrom->sub(new DateInterval('P1D'))->setTime(23, 59, 59);
+        $comparisonFrom = $comparisonTo
+            ->sub(new DateInterval('P' . ($currentPeriod->lengthInDays() - 1) . 'D'))
+            ->setTime(0, 0, 0);
+
+        $comparisonPeriod = new Period($comparisonFrom, $comparisonTo);
+
+        return new ResolvedPeriod($currentPeriod, $comparisonPeriod);
+    }
+}
+
+Pourquoi c’est comme ça
+	•	période par défaut = 30 jours glissants
+	•	comparaison = strictement précédente
+	•	même durée
+	•	inclusif
+	•	aucune ambiguïté
+
+⸻
+
+📄 src/Application/Admin/Dto/UserPeriodMetricsDto.php
+
+Rôle
+	•	Contrat figé backend → front
+	•	Aucun calcul
+	•	Aucune dépendance infra
+
+<?php
+
+declare(strict_types=1);
+
+namespace App\Application\Admin\Dto;
+
+use App\Application\Common\Period\Period;
+
+final class UserPeriodMetricsDto
+{
+    public function __construct(
+        public readonly MetricDto $registeredUsers,
+        public readonly MetricDto $activeUsers,
+        public readonly Period $currentPeriod,
+        public readonly Period $comparisonPeriod,
+    ) {
+    }
+}
+
+
+⸻
+
+📄 src/Application/Admin/Dto/MetricDto.php
+
+(oui, il faut ce fichier, sinon tu vas regretter dans 3 semaines)
+
+<?php
+
+declare(strict_types=1);
+
+namespace App\Application\Admin\Dto;
+
+final class MetricDto
+{
+    public function __construct(
+        public readonly int $count,
+        public readonly float $evolutionPercent,
+        public readonly Trend $trend,
+    ) {
+    }
+}
+
+
+⸻
+
+📄 src/Application/Admin/Dto/Trend.php
+
+<?php
+
+declare(strict_types=1);
+
+namespace App\Application\Admin\Dto;
+
+enum Trend: string
+{
+    case UP = 'up';
+    case DOWN = 'down';
+    case STABLE = 'stable';
+}
+
+
+⸻
+
+📄 src/Application/Admin/UseCase/GetUserMetrics.php
+
+Rôle
+	•	Intention métier
+	•	Zéro SQL
+	•	Zéro HTTP
+
+<?php
+
+declare(strict_types=1);
+
+namespace App\Application\Admin\UseCase;
+
+use App\Application\Common\Period\ResolvedPeriod;
+
+final class GetUserMetrics
+{
+    /**
+     * @param int[]|null $weekdays
+     */
+    public function __construct(
+        public readonly ResolvedPeriod $period,
+        public readonly ?array $weekdays,
+    ) {
+    }
+}
+
+
+⸻
+
+📄 src/Application/Admin/UseCase/GetUserMetricsHandler.php
+
+<?php
+
+declare(strict_types=1);
+
+namespace App\Application\Admin\UseCase;
+
+use App\Application\Admin\Dto\UserPeriodMetricsDto;
+use App\Application\Admin\Query\UserMetricsQuery;
+
+final class GetUserMetricsHandler
+{
+    public function __construct(
+        private UserMetricsQuery $query,
+    ) {
     }
 
-    public function from(): DateTimeImmutable
+    public function handle(GetUserMetrics $command): UserPeriodMetricsDto
     {
-        return $this->from;
+        return $this->query->execute(
+            $command->period,
+            $command->weekdays,
+        );
     }
+}
 
-    public function to(): DateTimeImmutable
-    {
-        return $this->to;
+
+⸻
+
+📄 src/Application/Admin/Query/UserMetricsQuery.php
+
+Rôle
+	•	Cœur métier KPI
+	•	Calcule les évolutions
+	•	Détermine les trends
+
+<?php
+
+declare(strict_types=1);
+
+namespace App\Application\Admin\Query;
+
+use App\Application\Admin\Dto\MetricDto;
+use App\Application\Admin\Dto\Trend;
+use App\Application\Admin\Dto\UserPeriodMetricsDto;
+use App\Application\Common\Period\ResolvedPeriod;
+use App\Repository\MessageRepository;
+use App\Repository\UserRepository;
+
+final class UserMetricsQuery
+{
+    public function __construct(
+        private UserRepository $userRepository,
+        private MessageRepository $messageRepository,
+    ) {
     }
 
     /**
-     * Durée en jours calendaires, bornes incluses.
-     * Ex: 01 → 09 = 9 jours
+     * @param int[]|null $weekdays
      */
-    public function lengthInDays(): int
+    public function execute(ResolvedPeriod $period, ?array $weekdays): UserPeriodMetricsDto
     {
-        return (int) $this->from
-            ->diff($this->to)
-            ->days + 1;
-    }
-}
+        $currentRegistered = $this->userRepository
+            ->countRegisteredBetween($period->current(), $weekdays);
 
-Pourquoi c’est volontairement simple
-	•	Pas de timezone ici
-	•	Pas de “now”
-	•	Pas de calcul de période précédente
-	•	Pas de weekday
+        $previousRegistered = $this->userRepository
+            ->countRegisteredBetween($period->comparison(), $weekdays);
 
-👉 Ce fichier ne changera presque jamais. C’est exactement ce qu’on veut.
+        $currentActive = $this->messageRepository
+            ->countActiveUsersBetween($period->current(), $weekdays);
 
-⸻
+        $previousActive = $this->messageRepository
+            ->countActiveUsersBetween($period->comparison(), $weekdays);
 
-📄 src/Application/Common/Period/ResolvedPeriod.php
-
-Rôle
-	•	Conteneur immuable
-	•	Porte toujours deux périodes :
-	•	courante
-	•	comparaison
-	•	Aucun calcul
-	•	Aucune règle métier
-
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Common\Period;
-
-final class ResolvedPeriod
-{
-    private Period $current;
-    private Period $comparison;
-
-    public function __construct(Period $current, Period $comparison)
-    {
-        $this->current = $current;
-        $this->comparison = $comparison;
+        return new UserPeriodMetricsDto(
+            $this->buildMetric($currentRegistered, $previousRegistered),
+            $this->buildMetric($currentActive, $previousActive),
+            $period->current(),
+            $period->comparison(),
+        );
     }
 
-    public function current(): Period
+    private function buildMetric(int $current, int $previous): MetricDto
     {
-        return $this->current;
-    }
+        if ($previous === 0) {
+            $evolution = $current === 0 ? 0.0 : 100.0;
+        } else {
+            $evolution = (($current - $previous) / $previous) * 100;
+        }
 
-    public function comparison(): Period
-    {
-        return $this->comparison;
+        $trend = match (true) {
+            $evolution > 0 => Trend::UP,
+            $evolution < 0 => Trend::DOWN,
+            default => Trend::STABLE,
+        };
+
+        return new MetricDto(
+            $current,
+            round($evolution, 1),
+            $trend,
+        );
     }
 }
 
 
 ⸻
 
-🧠 Pourquoi ces fichiers sont “terminés” dès maintenant
-	•	✔ aucune dépendance instable
-	•	✔ pas couplés à un use case
-	•	✔ pas couplés à Symfony
-	•	✔ testables trivialement
-	•	✔ lisibles dans 2 ans
+📄 Repositories – signatures uniquement (pour l’instant)
 
-Ils servent juste à porter un contrat. Et ils le font bien.
+src/Repository/UserRepository.php
 
-⸻
+public function countRegisteredBetween(Period $period, ?array $weekdays): int;
 
-⛔ Ce qu’on n’a volontairement PAS mis
-	•	DatePeriod PHP (trop implicite)
-	•	méthodes utilitaires douteuses
-	•	logique de comparaison
-	•	règles par défaut
-	•	weekdays
+src/Repository/MessageRepository.php
 
-Tout ça appartient au PeriodResolver, pas ici.
+public function countActiveUsersBetween(Period $period, ?array $weekdays): int;
+
 
 ⸻
 
-✅ Prochaine étape logique
+🧠 État du projet après ça
+	•	Tous les concepts métier sont posés
+	•	Rien n’est couplé au front
+	•	Rien n’est couplé à EasyAdmin
+	•	Tu peux tester chaque couche indépendamment
+	•	Tu peux brancher quand tu veux
 
-👉 PeriodResolver.php
+⸻
 
-Là on va :
-	•	lire la Request
-	•	appliquer la règle métier par défaut
-	•	calculer la période précédente exactement comme ta frise
+Prochaine étape logique (et seulement celle-là)
 
-Dis-le et on l’écrit ligne par ligne, proprement, sans magie.
+👉 Implémenter UNE requête SQL
+(par exemple countRegisteredBetween)
+et vérifier que tout le pipeline compile.
+
+Après ça, le reste est mécanique.
+
+Tu avances bien. Et oui, c’est propre.
