@@ -1,74 +1,59 @@
-Parfait, merci pour le code complet 👍
-Bonne nouvelle : **ton `ChartController` est déjà très propre et n’a quasiment rien à changer**.
-On va **s’adapter à lui**, pas l’inverse.
+Parfait. Là on est pleinement dans le bon sujet :
+👉 du style + UX,
+👉 en restant Twig + Stimulus,
+👉 sans React,
+👉 sans bricolage,
+👉 et réutilisable pour les futurs filtres admin.
 
-👉 Objectif :
+Je vais te donner UNE implémentation claire, alignée avec ce que tu as déjà, que tu peux copier-coller, puis adapter visuellement.
 
-* garder **ce controller tel quel**
-* brancher le **dropdown multi-jours** dessus
-* continuer à appeler **`onPeriodChange()`**
-* envoyer `weekday[]` uniquement quand nécessaire
-* “Tous les jours” = **aucun `weekday[]` envoyé**
+⸻
 
----
+🎯 Objectif UX (on est d’accord)
 
-# ✅ Principe d’adaptation (ultra simple)
+Tu veux :
+	•	un dropdown
+	•	avec checkboxes
+	•	multi-sélection
+	•	des pastilles (chips) visibles sous le dropdown
+	•	“Tous les jours” par défaut (quand aucune sélection)
+	•	le tout piloté par Stimulus
+	•	compatible avec ton ChartController existant
+	•	dans un seul Twig
 
-* **TON `ChartController` NE CHANGE PAS**
-* On ajoute **UN AUTRE controller Stimulus** dédié au dropdown (`weekday-filter`)
-* Ce controller :
+C’est exactement le bon cas d’usage pour Stimulus.
 
-  * gère l’UX (checkboxes, label)
-  * crée/supprime les `input hidden weekday[]`
-* `onPeriodChange()` continue de fonctionner **sans modification**
+⸻
 
-👉 Tu continues à faire :
+🧠 Architecture retenue (simple et saine)
+	•	Twig : structure HTML
+	•	Stimulus (1 controller UI) :
+	•	gère l’état visuel (checkboxes ↔ chips)
+	•	injecte les <input type="hidden" name="weekday[]">
+	•	ChartController : inchangé (lit juste le form)
 
-```js
-const formData = new FormData(form)
-const params = new URLSearchParams(formData).toString()
-this.load(params)
-```
+👉 On sépare UX et data, sans framework lourd.
 
-et ça marche.
+⸻
 
----
+1️⃣ HTML Twig (propre, lisible, extensible)
 
-# 1️⃣ Ton `ChartController` (inchangé ✅)
+À mettre dans ton <form id="export-usage-data">.
 
-👉 **AUCUNE modification à faire** dans le code que tu viens d’envoyer.
-Il est déjà :
-
-* robuste
-* clean
-* bien découpé
-* compatible avec `weekday[]`
-
-Donc on n’y touche pas.
-
----
-
-# 2️⃣ HTML – version adaptée à TON setup
-
-À placer **dans le `<form id="export-usage-data">`**, à côté des dates.
-
-```html
 <div
-  class="dropdown mx-2"
-  data-controller="weekday-filter"
+  class="dropdown"
+  data-controller="weekday"
 >
   <button
     class="btn btn-outline-secondary dropdown-toggle"
     type="button"
     data-bs-toggle="dropdown"
   >
-    <span data-weekday-filter-target="label">
-      Tous les jours
-    </span>
+    Jours de la semaine
   </button>
 
-  <div class="dropdown-menu p-2">
-    {% for day, label in {
+  <div class="dropdown-menu p-3">
+    {% for value, label in {
       1: 'Lundi',
       2: 'Mardi',
       3: 'Mercredi',
@@ -81,124 +66,176 @@ Donc on n’y touche pas.
         <input
           class="form-check-input"
           type="checkbox"
-          value="{{ day }}"
-          id="weekday-{{ day }}"
-          data-weekday-filter-target="checkbox"
-          {{ stimulus_action('weekday-filter', 'toggle', 'change') }}
-          {{ stimulus_action('chart', 'onPeriodChange', 'change') }}
+          value="{{ value }}"
+          id="weekday-{{ value }}"
+          data-weekday-target="checkbox"
+          data-action="change->weekday#toggle change->chart#onPeriodChange"
         >
-        <label class="form-check-label" for="weekday-{{ day }}">
+        <label class="form-check-label" for="weekday-{{ value }}">
           {{ label }}
         </label>
       </div>
     {% endfor %}
   </div>
 
-  <!-- inputs hidden injectés ici -->
-  <div data-weekday-filter-target="inputs"></div>
+  <!-- Chips -->
+  <div class="mt-2 d-flex flex-wrap gap-1" data-weekday-target="chips"></div>
+
+  <!-- Inputs envoyés au backend -->
+  <div data-weekday-target="inputs"></div>
 </div>
-```
 
-### Points importants
+Pourquoi c’est bien
+	•	aucun JS inline
+	•	aucune logique backend
+	•	tout est explicite
+	•	facilement duplicable pour d’autres filtres admin
 
-* ✅ **pas de `<select>`**
-* ✅ UX identique à “Base de connaissances”
-* ✅ `onPeriodChange()` est déclenché automatiquement
-* ✅ backend reçoit `weekday[]` seulement si nécessaire
+⸻
 
----
+2️⃣ Controller Stimulus (UX uniquement)
 
-# 3️⃣ Nouveau controller Stimulus (à ajouter)
+👉 NOUVEAU controller
+assets/controllers/weekday_controller.js
 
-👉 **NOUVEAU fichier**
-`controllers/weekday_filter_controller.js`
-
-```js
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['checkbox', 'label', 'inputs']
+  static targets = ['checkbox', 'chips', 'inputs']
 
   toggle() {
-    // reset hidden inputs
+    // reset
+    this.chipsTarget.innerHTML = ''
     this.inputsTarget.innerHTML = ''
 
     const checked = this.checkboxTargets.filter(cb => cb.checked)
 
-    // Aucun jour sélectionné → Tous les jours
+    // Aucun jour sélectionné => Tous les jours
     if (checked.length === 0) {
-      this.labelTarget.textContent = 'Tous les jours'
+      this.renderDefaultChip()
       return
     }
 
-    // Label lisible
-    this.labelTarget.textContent = checked
-      .map(cb => cb.nextElementSibling.textContent)
-      .join(', ')
-
-    // Inputs envoyés au backend
     checked.forEach(cb => {
-      const input = document.createElement('input')
-      input.type = 'hidden'
-      input.name = 'weekday[]'
-      input.value = cb.value
-      this.inputsTarget.appendChild(input)
+      this.renderChip(cb)
+      this.renderHiddenInput(cb)
     })
   }
+
+  renderDefaultChip() {
+    const chip = document.createElement('span')
+    chip.className = 'badge bg-secondary'
+    chip.textContent = 'Tous les jours'
+    this.chipsTarget.appendChild(chip)
+  }
+
+  renderChip(checkbox) {
+    const chip = document.createElement('span')
+    chip.className = 'badge bg-success d-flex align-items-center gap-1'
+    chip.textContent = checkbox.nextElementSibling.textContent
+
+    const close = document.createElement('button')
+    close.type = 'button'
+    close.className = 'btn-close btn-close-white btn-sm'
+    close.addEventListener('click', () => {
+      checkbox.checked = false
+      this.toggle()
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    chip.appendChild(close)
+    this.chipsTarget.appendChild(chip)
+  }
+
+  renderHiddenInput(checkbox) {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = 'weekday[]'
+    input.value = checkbox.value
+    this.inputsTarget.appendChild(input)
+  }
 }
-```
 
----
 
-# 4️⃣ Pourquoi ça marche parfaitement avec TON code
+⸻
 
-### Cas 1 — Aucun jour coché
+3️⃣ Ce que fait exactement cette implémentation
 
-* aucun `weekday[]`
-* `FormData` n’envoie rien
-* backend → `$weekdays = null`
-* ton code = **Tous les jours**
+Cas 1 — Aucun jour coché
+	•	aucune checkbox active
+	•	1 chip : “Tous les jours”
+	•	aucun weekday[] envoyé
+	•	backend → pas de filtre
 
-### Cas 2 — Mardi + Jeudi
+Cas 2 — Mardi + Jeudi
+	•	chips : Mardi ✕ Jeudi ✕
+	•	inputs envoyés :
 
-* `weekday[]=2&weekday[]=4`
-* ton `getUsageData()` filtre
-* `$return` ne contient que ces jours
-* charts affichent uniquement ces dates
+weekday[]=2
+weekday[]=4
 
-👉 **Aucune logique ajoutée dans `ChartController`**
-👉 **Aucune condition spéciale “Tous les jours”**
-👉 **Tout est implicite et robuste**
 
----
+	•	ChartController → inchangé
+	•	backend → filtre correct
 
-# 5️⃣ Ce que tu as très bien fait (à souligner)
+Cas 3 — Clic sur ✕ d’une chip
+	•	décoche la checkbox
+	•	met à jour chips + inputs
+	•	relance onPeriodChange()
 
-* `onPeriodChange()` centralisé ✔
-* `FormData + URLSearchParams` ✔
-* charts disposés proprement ✔
-* resize géré correctement ✔
-* pas de logique métier côté JS ✔
+UX fluide, logique claire.
 
-On a juste ajouté :
-👉 **un controller UI dédié**, comme il se doit.
+⸻
 
----
+4️⃣ Style : tu peux aller loin sans CSS custom
 
-# ✅ Résumé final
+Déjà avec Bootstrap :
+	•	badge bg-success
+	•	btn-outline-secondary
+	•	gap-1, flex-wrap, mt-2
 
-* ❌ on ne touche pas à ton `ChartController`
-* ✅ on ajoute `weekday-filter`
-* ✅ UX identique à “Base de connaissances”
-* ✅ multi-jours
-* ✅ “Tous les jours” par défaut
-* ✅ backend inchangé
-* ✅ facile à supprimer/refactor plus tard
+Si tu veux affiner :
+	•	couleur BNP
+	•	animations
+	•	hover
 
-Franchement : **c’est propre, maîtrisé, et pro**.
-Si tu veux, prochaine étape logique :
+👉 tu le fais plus tard, sans toucher à la logique.
 
-* afficher les jours sélectionnés sous forme de **chips vertes**
-* ou ajouter un preset “Jours ouvrés / Week-end”
+⸻
 
-Mais là, tu es **très bien**.
+5️⃣ Pourquoi c’est la bonne base pour l’admin futur
+
+Tu l’as très bien senti :
+
+“On va avoir plein de filtres admin”
+
+Avec cette approche :
+	•	chaque filtre = 1 controller UI
+	•	même pattern :
+	•	dropdown
+	•	checkboxes
+	•	chips
+	•	inputs hidden
+	•	backend reste simple
+	•	ChartController reste générique
+
+👉 Tu construis un langage UI admin, pas un one-shot.
+
+⸻
+
+✅ Conclusion nette
+	•	Tu n’avais pas besoin de React
+	•	Tu avais exactement besoin de Stimulus
+	•	Tu fais du Twig moderne, pas du PHP poussiéreux
+	•	Cette solution est :
+	•	propre
+	•	extensible
+	•	maintenable
+	•	professionnelle
+
+Si tu veux, prochaine étape naturelle :
+	•	factoriser ce pattern en composant Twig
+	•	ou créer un BaseFilterController Stimulus
+	•	ou appliquer le même UX à d’autres filtres (langue, statut, etc.)
+
+Mais là, honnêtement : tu es au bon niveau.
