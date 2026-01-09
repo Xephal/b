@@ -1,154 +1,156 @@
-Très bien. On continue à empiler du béton armé, pas des abstractions LinkedIn.
-Suite logique unique comme annoncé : les utilisateurs actifs. Même discipline, un cran de complexité en plus, zéro surprise.
+Maintenant, on arrête d’empiler et on fait circuler le courant.
+Tu as le moteur. Il faut brancher la prise. Étape suivante unique et logique :
+
+👉 exposer le use case via le controller admin.
+Pas de front, pas de Twig cosmétique, juste un endpoint propre qui prouve que tout ce qu’on a fait tient debout.
 
 ⸻
 
-🎯 Objectif précis (on ne l’élargit pas)
+🧭 Ce qu’on fait maintenant (et seulement ça)
 
-Implémenter :
-
-MessageRepository::countActiveUsersBetween()
-
-👉 Utilisateur actif = utilisateur ayant envoyé au moins un message
-👉 sur une période donnée
-👉 avec un filtre weekday optionnel
-👉 période incluse
-👉 DISTINCT users, pas messages
+Objectif
+	•	Valider tout le pipeline
+	•	Depuis la Request
+	•	Jusqu’au DTO final
+	•	Sans EasyAdmin, sans React, sans décor
 
 ⸻
 
-📄 Fichier concerné
+📄 Étape 1 — Modifier DashboardController
 
-📁 src/Repository/MessageRepository.php
+📁 src/Controller/Admin/DashboardController.php
 
-Tu as déjà la signature. On met enfin le moteur dedans.
+On ajoute une action dédiée aux métriques users.
 
 ⸻
 
-✅ Implémentation exacte (Doctrine, sans contorsion)
+✅ Action controller exacte (copier-coller)
 
 <?php
 
 declare(strict_types=1);
 
-namespace App\Repository;
+namespace App\Controller\Admin;
 
-use App\Application\Common\Period\Period;
-use App\Entity\Message;
-use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
-use Doctrine\Persistence\ManagerRegistry;
+use App\Application\Admin\UseCase\GetUserMetrics;
+use App\Application\Admin\UseCase\GetUserMetricsHandler;
+use App\Application\Common\Period\PeriodResolver;
+use DateTimeImmutable;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Annotation\Route;
 
-final class MessageRepository extends ServiceEntityRepository
+final class DashboardController extends AbstractController
 {
-    public function __construct(ManagerRegistry $registry)
-    {
-        parent::__construct($registry, Message::class);
-    }
-
-    /**
-     * @param int[]|null $weekdays 1 (Monday) → 7 (Sunday)
-     */
-    public function countActiveUsersBetween(Period $period, ?array $weekdays): int
-    {
-        $qb = $this->createQueryBuilder('m')
-            ->select('COUNT(DISTINCT u.id)')
-            ->innerJoin('m.conversation', 'c')
-            ->innerJoin('c.user', 'u')
-            ->where('m.createdAt BETWEEN :from AND :to')
-            ->setParameter('from', $period->from())
-            ->setParameter('to', $period->to());
-
-        if (!empty($weekdays)) {
-            $qb
-                ->andWhere('DAYOFWEEK(m.createdAt) IN (:weekdays)')
-                ->setParameter('weekdays', $this->mapWeekdaysToSql($weekdays));
-        }
-
-        return (int) $qb
-            ->getQuery()
-            ->getSingleScalarResult();
-    }
-
-    /**
-     * MySQL DAYOFWEEK :
-     * 1 = Sunday
-     * 7 = Saturday
-     *
-     * Métier :
-     * 1 = Monday
-     * 7 = Sunday
-     */
-    private function mapWeekdaysToSql(array $weekdays): array
-    {
-        return array_map(
-            static fn (int $day): int => $day === 7 ? 1 : $day + 1,
-            $weekdays
+    #[Route('/admin/kpi/users', name: 'admin_kpi_users', methods: ['GET'])]
+    public function userMetrics(
+        Request $request,
+        PeriodResolver $periodResolver,
+        GetUserMetricsHandler $handler,
+    ): JsonResponse {
+        // 1️⃣ Résoudre les périodes (courante + comparaison)
+        $resolvedPeriod = $periodResolver->resolve(
+            $request,
+            new DateTimeImmutable()
         );
+
+        // 2️⃣ Lire le filtre weekday (optionnel)
+        $weekdays = $request->query->all('weekdays');
+        $weekdays = $weekdays !== [] ? array_map('intval', $weekdays) : null;
+
+        // 3️⃣ Exécuter le use case
+        $result = $handler->handle(
+            new GetUserMetrics(
+                $resolvedPeriod,
+                $weekdays
+            )
+        );
+
+        // 4️⃣ Retour brut (on veut voir la vérité)
+        return $this->json($result);
     }
 }
 
 
 ⸻
 
-🧠 Pourquoi c’est exactement ce qu’il faut
+🧠 Pourquoi cette action est “propre”
 
-✔ COUNT(DISTINCT u.id)
-	•	on compte des utilisateurs
-	•	pas des messages
-	•	pas des conversations
-	•	pas de double comptage
+✔ Le controller orchestre, point
+	•	lit la Request
+	•	appelle le resolver
+	•	appelle le handler
+	•	retourne le résultat
 
-✔ Filtre weekday appliqué au bon endroit
-	•	sur m.createdAt
-	•	logique métier respectée
-	•	pas de faux “actif” parce qu’un user a parlé un autre jour
-
-✔ Même mapping weekday que UserRepository
-	•	cohérence globale
-	•	pas de divergence silencieuse
-	•	si un jour tu changes de DB, tu sais où toucher
-
-✔ Toujours aucune logique de période ici
-	•	pas de fallback
-	•	pas de “si null”
-	•	le repo exécute, il ne décide pas
+Aucune logique métier.
+Aucune logique SQL.
+Aucune logique UI.
 
 ⸻
 
-⛔ Ce qu’on évite encore une fois
-	•	compter les conversations
-	•	sous-requêtes obscures
-	•	filtrer sur User.createdAt (erreur classique)
-	•	logique métier dans SQL
-	•	magie Doctrine “intelligente”
+✔ Tu peux tester immédiatement
+
+Appelle dans ton navigateur ou Postman :
+
+/admin/kpi/users
+
+ou avec filtres :
+
+/admin/kpi/users?date_from=2025-01-10&date_to=2025-01-18&weekdays[]=1&weekdays[]=2
+
+👉 Tu dois obtenir :
+	•	les counts
+	•	les évolutions %
+	•	les périodes courante / comparaison
 
 ⸻
 
-🧪 État du pipeline maintenant
+🚨 Si quelque chose ne marche pas maintenant
 
-À cet instant précis :
-	•	PeriodResolver ✔
-	•	ResolvedPeriod ✔
-	•	Use case GetUserMetrics ✔
-	•	Query UserMetricsQuery ✔
-	•	UserRepository ✔
-	•	MessageRepository ✔
+C’est forcément :
+	•	un mapping Doctrine
+	•	un champ createdAt
+	•	une relation mal nommée
 
-👉 Tout le cœur métier compile.
-Il n’y a plus de warning légitime.
+👉 Et c’est parfait, parce que :
+	•	tout est localisé
+	•	rien n’est caché
+	•	pas de front pour brouiller les pistes
 
 ⸻
 
-👉 Prochaine étape logique (et seulement celle-là)
+🧪 Étape de validation (à faire avant de continuer)
+	•	endpoint répond
+	•	JSON cohérent
+	•	périodes correctes
+	•	évolution logique
+	•	aucun warning PHP
 
-Brancher le use case dans le controller admin :
+⸻
 
-DashboardController
-  → PeriodResolver
-  → GetUserMetricsHandler
-  → DTO
+🧭 Et après seulement
 
-Pas de Twig, pas de React encore.
-Juste un endpoint propre.
+Quand ce endpoint est validé :
 
-Dis-le et je te donne l’action controller exacte, prête à coller.
+Étape suivante possible
+
+👉 Afficher la période de comparaison sous le date picker (Twig)
+
+Puis seulement après :
+	•	composant React
+	•	binding avec Stimulus
+	•	polish UI
+
+⸻
+
+Verdict honnête
+
+Tu es exactement au point où beaucoup arrêtent trop tôt.
+Toi, tu fais circuler le flux jusqu’au bout. C’est bien.
+
+Dis-moi :
+	•	ce que retourne l’endpoint
+	•	ou l’erreur exacte si ça casse
+
+Et on corrige chirurgicalement.
