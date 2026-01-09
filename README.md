@@ -1,110 +1,167 @@
-Très bien. On repart à zéro, proprement, sans résidu de copier-coller.
-Voici LA route complète, fonctionnelle, compilable, sans variable fantôme, à coller telle quelle.
+Oui, on avance bien. Et non, ce n’est pas bizarre, c’est logique. Tu viens juste de tomber sur le dernier détail invisible mais crucial : la sérialisation JSON des objets Period.
+
+Respire. Les chiffres sont bons. C’est l’emballage qui est vide.
 
 ⸻
 
-📄 src/Controller/Admin/DashboardController.php
+🔍 Ce que tu observes (et pourquoi)
 
-Action /admin/kpi/users complète
+Dans ton JSON, tu as :
+
+"currentPeriod": [],
+"comparisonPeriod": []
+
+👉 Ça ne veut pas dire que les périodes sont vides.
+👉 Ça veut dire que Symfony ne sait pas comment sérialiser tes objets Period.
+
+Pourquoi ?
+	•	Period est un value object
+	•	avec des propriétés privées
+	•	sans getters exposés au serializer
+	•	sans implémentation de JsonSerializable
+
+Résultat :
+
+Symfony dit “ok, je vois un objet… je n’ai rien à en sortir” → {} / []
+
+⸻
+
+🧠 Règle importante (à retenir)
+
+Un DTO exposé en JSON ne doit jamais contenir directement un Value Object non sérialisable.
+
+Tu as fait architecturalement juste, maintenant on fait techniquement lisible.
+
+⸻
+
+✅ La solution propre (et la bonne)
+
+On ne touche pas :
+	•	aux repositories
+	•	aux use cases
+	•	aux calculs
+	•	aux règles métier
+
+On fait exactement UNE chose :
+👉 rendre Period sérialisable explicitement.
+
+⸻
+
+🛠️ Option recommandée : implémenter JsonSerializable
+
+📄 src/Application/Common/Period/Period.php
+
+Ajoute l’interface et la méthode suivante.
+
+✅ Version corrigée complète
 
 <?php
 
 declare(strict_types=1);
 
-namespace App\Controller\Admin;
+namespace App\Application\Common\Period;
 
-use App\Application\Admin\UseCase\GetUserMetrics;
-use App\Application\Admin\UseCase\GetUserMetricsHandler;
-use App\Application\Common\Period\PeriodResolver;
 use DateTimeImmutable;
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Routing\Annotation\Route;
+use InvalidArgumentException;
+use JsonSerializable;
 
-final class DashboardController extends AbstractController
+final class Period implements JsonSerializable
 {
-    #[Route('/admin/kpi/users', name: 'admin_kpi_users', methods: ['GET'])]
-    public function userMetrics(
-        Request $request,
-        PeriodResolver $periodResolver,
-        GetUserMetricsHandler $handler,
-    ): JsonResponse {
-        // 1️⃣ Résolution de la période (courante + comparaison)
-        $resolvedPeriod = $periodResolver->resolve(
-            $request,
-            new DateTimeImmutable()
-        );
+    private DateTimeImmutable $from;
+    private DateTimeImmutable $to;
 
-        // 2️⃣ Normalisation du filtre weekdays (null ou int[] non vide)
-        $weekdaysParam = $request->query->get('weekdays');
-
-        if ($weekdaysParam === null || $weekdaysParam === '') {
-            $weekdays = null;
-        } elseif (is_array($weekdaysParam)) {
-            $weekdays = array_filter(array_map('intval', $weekdaysParam));
-            $weekdays = $weekdays !== [] ? $weekdays : null;
-        } else {
-            $weekdays = array_filter(
-                array_map('intval', explode(',', $weekdaysParam))
-            );
-            $weekdays = $weekdays !== [] ? $weekdays : null;
+    public function __construct(DateTimeImmutable $from, DateTimeImmutable $to)
+    {
+        if ($from > $to) {
+            throw new InvalidArgumentException('Period "from" date must be before or equal to "to" date.');
         }
 
-        // 3️⃣ Exécution du use case
-        $result = $handler->handle(
-            new GetUserMetrics(
-                $resolvedPeriod,
-                $weekdays
-            )
-        );
+        $this->from = $from;
+        $this->to = $to;
+    }
 
-        // 4️⃣ Réponse JSON
-        return $this->json($result);
+    public function from(): DateTimeImmutable
+    {
+        return $this->from;
+    }
+
+    public function to(): DateTimeImmutable
+    {
+        return $this->to;
+    }
+
+    public function lengthInDays(): int
+    {
+        return (int) $this->from
+            ->diff($this->to)
+            ->days + 1;
+    }
+
+    public function jsonSerialize(): array
+    {
+        return [
+            'from' => $this->from->format('Y-m-d'),
+            'to'   => $this->to->format('Y-m-d'),
+        ];
     }
 }
 
+👉 C’est tout.
 
 ⸻
 
-✅ Ce que cette route garantit
-	•	✔ aucune variable non définie
-	•	✔ weekdays toujours valide (null ou int[])
-	•	✔ aucune logique métier dans le controller
-	•	✔ réponse JSON brute (idéale pour debug)
-	•	✔ pipeline complet validé
+🧪 Ce que tu dois voir après ça
+
+Recharge exactement la même URL :
+
+/admin/kpi/users?date_from=2025-12-10&date_to=2025-12-18&weekdays[]=1&weekdays[]=2
+
+Tu dois maintenant obtenir quelque chose comme :
+
+{
+  "registeredUsers": {
+    "count": 708,
+    "evolutionPercent": 100,
+    "trend": "up"
+  },
+  "activeUsers": {
+    "count": 514,
+    "evolutionPercent": 100,
+    "trend": "up"
+  },
+  "currentPeriod": {
+    "from": "2025-12-10",
+    "to": "2025-12-18"
+  },
+  "comparisonPeriod": {
+    "from": "2025-12-01",
+    "to": "2025-12-09"
+  }
+}
+
+👉 Et là, soudainement, tout devient interprétable :
+	•	tu vois la frise
+	•	tu vois la comparaison
+	•	le +100 % a un contexte
+	•	l’UI peut afficher la période sous le date picker
 
 ⸻
 
-🧪 Tests rapides à faire
+🚫 Ce qu’on ne fait surtout pas
+	•	❌ calculer les périodes dans le front
+	•	❌ reconstruire les dates côté JS
+	•	❌ exposer des DateTimeImmutable bruts
+	•	❌ “deviner” la période de comparaison
 
-Toutes ces URLs doivent fonctionner sans erreur :
-
-/admin/kpi/users
-/admin/kpi/users?weekdays[]=1&weekdays[]=2
-/admin/kpi/users?weekdays=1,2
-/admin/kpi/users?date_from=2025-01-10&date_to=2025-01-18
-
+Tout est déjà juste côté backend.
 
 ⸻
 
-🧠 Si ça casse encore
+Verdict
+	•	✔ les calculs sont bons
+	•	✔ le pipeline est sain
+	•	✔ il manquait uniquement la sérialisation explicite
+	•	✔ problème classique, bien attrapé
 
-À ce stade, ce ne sera plus le controller.
-
-Ce sera :
-	•	un mapping Doctrine (createdAt)
-	•	une relation (conversation → user)
-	•	ou une donnée vide inattendue
-
-Et là, on corrigera au bon endroit, sans bricoler.
-
-⸻
-
-Verdict final
-
-Colle ce code, recharge /admin/kpi/users.
-	•	Si ça marche → on passe à l’affichage Twig / UI
-	•	Si ça casse → colle l’erreur exacte
-
-Tu es à 95 %. Le dernier 5 % est toujours le plus pénible.
+👉 Fais cette modif, recharge, et dis-moi si tu vois bien les périodes.
+Après ça, on passe à l’affichage Twig sous le date picker, et là tu vas enfin “voir” ton boulot.
