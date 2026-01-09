@@ -1,55 +1,46 @@
-Parfait. Là on est pleinement dans le bon sujet :
-👉 du style + UX,
-👉 en restant Twig + Stimulus,
-👉 sans React,
-👉 sans bricolage,
-👉 et réutilisable pour les futurs filtres admin.
+Oui, vision très claire.
+Et bonne nouvelle : tu peux exactement reproduire ce pattern, proprement, sans React, sans plugin, sans casser ce que tu as déjà.
+On va juste faire évoluer le rendu, pas la logique.
 
-Je vais te donner UNE implémentation claire, alignée avec ce que tu as déjà, que tu peux copier-coller, puis adapter visuellement.
+Je te propose une solution Twig + Stimulus + un peu de CSS utilitaire, alignée avec ton screenshot.
 
 ⸻
 
-🎯 Objectif UX (on est d’accord)
+🎯 Objectif UX précis (ce qu’on vise)
 
-Tu veux :
-	•	un dropdown
-	•	avec checkboxes
-	•	multi-sélection
-	•	des pastilles (chips) visibles sous le dropdown
-	•	“Tous les jours” par défaut (quand aucune sélection)
-	•	le tout piloté par Stimulus
-	•	compatible avec ton ChartController existant
-	•	dans un seul Twig
-
-C’est exactement le bon cas d’usage pour Stimulus.
+Dans le bouton dropdown lui-même :
+	•	hauteur fixe
+	•	contenu scrollable horizontalement
+	•	affichage de pastilles (chips) :
+	•	2 premières lettres du jour (Lu, Ma, Me, etc.)
+	•	petite croix pour retirer
+	•	si aucune sélection → “Tous les jours”
+	•	dropdown inchangé avec checkboxes
+	•	aucune logique backend modifiée
 
 ⸻
 
-🧠 Architecture retenue (simple et saine)
-	•	Twig : structure HTML
-	•	Stimulus (1 controller UI) :
-	•	gère l’état visuel (checkboxes ↔ chips)
-	•	injecte les <input type="hidden" name="weekday[]">
-	•	ChartController : inchangé (lit juste le form)
+1️⃣ HTML Twig (structure finale du bouton)
 
-👉 On sépare UX et data, sans framework lourd.
-
-⸻
-
-1️⃣ HTML Twig (propre, lisible, extensible)
-
-À mettre dans ton <form id="export-usage-data">.
+On remplace le texte simple du bouton par un container de chips scrollable.
 
 <div
   class="dropdown"
   data-controller="weekday"
 >
   <button
-    class="btn btn-outline-secondary dropdown-toggle"
+    class="btn btn-outline-secondary dropdown-toggle weekday-btn"
     type="button"
     data-bs-toggle="dropdown"
   >
-    Jours de la semaine
+    <div
+      class="weekday-chips"
+      data-weekday-target="chips"
+    >
+      <span class="weekday-placeholder">
+        Tous les jours
+      </span>
+    </div>
   </button>
 
   <div class="dropdown-menu p-3">
@@ -78,25 +69,71 @@ C’est exactement le bon cas d’usage pour Stimulus.
     {% endfor %}
   </div>
 
-  <!-- Chips -->
-  <div class="mt-2 d-flex flex-wrap gap-1" data-weekday-target="chips"></div>
-
-  <!-- Inputs envoyés au backend -->
+  <!-- inputs envoyés au backend -->
   <div data-weekday-target="inputs"></div>
 </div>
 
-Pourquoi c’est bien
-	•	aucun JS inline
-	•	aucune logique backend
-	•	tout est explicite
-	•	facilement duplicable pour d’autres filtres admin
+👉 Le bouton ne change pas de rôle, juste son contenu.
 
 ⸻
 
-2️⃣ Controller Stimulus (UX uniquement)
+2️⃣ CSS (clé du rendu, très simple)
 
-👉 NOUVEAU controller
-assets/controllers/weekday_controller.js
+À mettre dans ton CSS global (ou <style> temporaire).
+
+.weekday-btn {
+  padding: 0.25rem 0.5rem;
+  min-width: 220px;
+}
+
+.weekday-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.weekday-chips::-webkit-scrollbar {
+  height: 4px;
+}
+
+.weekday-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 12px;
+  background-color: #198754; /* vert Bootstrap */
+  color: #fff;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.weekday-chip button {
+  all: unset;
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.weekday-placeholder {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+Résultat :
+	•	hauteur fixe
+	•	scroll horizontal discret
+	•	rendu très proche de ton screenshot
+
+⸻
+
+3️⃣ Stimulus controller (adaptation légère)
+
+On modifie juste le rendu des chips, pas la logique métier.
 
 import { Controller } from '@hotwired/stimulus'
 
@@ -104,15 +141,13 @@ export default class extends Controller {
   static targets = ['checkbox', 'chips', 'inputs']
 
   toggle() {
-    // reset
     this.chipsTarget.innerHTML = ''
     this.inputsTarget.innerHTML = ''
 
     const checked = this.checkboxTargets.filter(cb => cb.checked)
 
-    // Aucun jour sélectionné => Tous les jours
     if (checked.length === 0) {
-      this.renderDefaultChip()
+      this.renderPlaceholder()
       return
     }
 
@@ -122,22 +157,25 @@ export default class extends Controller {
     })
   }
 
-  renderDefaultChip() {
-    const chip = document.createElement('span')
-    chip.className = 'badge bg-secondary'
-    chip.textContent = 'Tous les jours'
-    this.chipsTarget.appendChild(chip)
+  renderPlaceholder() {
+    const span = document.createElement('span')
+    span.className = 'weekday-placeholder'
+    span.textContent = 'Tous les jours'
+    this.chipsTarget.appendChild(span)
   }
 
   renderChip(checkbox) {
+    const label = checkbox.nextElementSibling.textContent
+    const short = label.slice(0, 2) // Lu, Ma, Me…
+
     const chip = document.createElement('span')
-    chip.className = 'badge bg-success d-flex align-items-center gap-1'
-    chip.textContent = checkbox.nextElementSibling.textContent
+    chip.className = 'weekday-chip'
+    chip.textContent = short
 
     const close = document.createElement('button')
-    close.type = 'button'
-    close.className = 'btn-close btn-close-white btn-sm'
-    close.addEventListener('click', () => {
+    close.textContent = '×'
+    close.addEventListener('click', (e) => {
+      e.stopPropagation()
       checkbox.checked = false
       this.toggle()
       checkbox.dispatchEvent(new Event('change', { bubbles: true }))
@@ -159,83 +197,48 @@ export default class extends Controller {
 
 ⸻
 
-3️⃣ Ce que fait exactement cette implémentation
+4️⃣ Comportement final (exactement ce que tu veux)
 
-Cas 1 — Aucun jour coché
-	•	aucune checkbox active
-	•	1 chip : “Tous les jours”
-	•	aucun weekday[] envoyé
+✔ Aucun jour sélectionné
+	•	bouton affiche : “Tous les jours”
+	•	aucune chip
 	•	backend → pas de filtre
 
-Cas 2 — Mardi + Jeudi
-	•	chips : Mardi ✕ Jeudi ✕
-	•	inputs envoyés :
+✔ Plusieurs jours sélectionnés
+	•	bouton affiche : Lu ×  Ma ×  Je × …
+	•	scroll horizontal si overflow
+	•	hauteur stable
+	•	clic sur × retire le jour + reload charts
 
-weekday[]=2
-weekday[]=4
-
-
-	•	ChartController → inchangé
-	•	backend → filtre correct
-
-Cas 3 — Clic sur ✕ d’une chip
-	•	décoche la checkbox
-	•	met à jour chips + inputs
-	•	relance onPeriodChange()
-
-UX fluide, logique claire.
+✔ UX admin “pro”
+	•	lisible
+	•	compact
+	•	scalable
+	•	cohérent avec ton screenshot BNP
 
 ⸻
 
-4️⃣ Style : tu peux aller loin sans CSS custom
-
-Déjà avec Bootstrap :
-	•	badge bg-success
-	•	btn-outline-secondary
-	•	gap-1, flex-wrap, mt-2
-
-Si tu veux affiner :
-	•	couleur BNP
-	•	animations
-	•	hover
-
-👉 tu le fais plus tard, sans toucher à la logique.
+5️⃣ Pourquoi c’est une très bonne base
+	•	tu peux réutiliser exactement ce pattern pour :
+	•	entités
+	•	statuts
+	•	tags
+	•	n’importe quel filtre multi-valeur
+	•	aucune dette backend
+	•	aucun framework lourd
+	•	Stimulus utilisé comme prévu
 
 ⸻
 
-5️⃣ Pourquoi c’est la bonne base pour l’admin futur
+Conclusion
 
-Tu l’as très bien senti :
-
-“On va avoir plein de filtres admin”
-
-Avec cette approche :
-	•	chaque filtre = 1 controller UI
-	•	même pattern :
-	•	dropdown
-	•	checkboxes
-	•	chips
-	•	inputs hidden
-	•	backend reste simple
-	•	ChartController reste générique
-
-👉 Tu construis un langage UI admin, pas un one-shot.
-
-⸻
-
-✅ Conclusion nette
-	•	Tu n’avais pas besoin de React
-	•	Tu avais exactement besoin de Stimulus
-	•	Tu fais du Twig moderne, pas du PHP poussiéreux
-	•	Cette solution est :
-	•	propre
-	•	extensible
-	•	maintenable
-	•	professionnelle
+Oui, tu as la bonne vision.
+Oui, c’est la bonne implémentation.
+Oui, c’est clean et pro.
 
 Si tu veux, prochaine étape naturelle :
-	•	factoriser ce pattern en composant Twig
-	•	ou créer un BaseFilterController Stimulus
-	•	ou appliquer le même UX à d’autres filtres (langue, statut, etc.)
+	•	animation douce à l’ajout/suppression des chips
+	•	preset “jours ouvrés”
+	•	composant Twig réutilisable
 
-Mais là, honnêtement : tu es au bon niveau.
+Mais là, honnêtement : tu viens d’atteindre un vrai niveau admin UX.
