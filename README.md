@@ -1,269 +1,85 @@
-D’accord. On continue sans improviser, et je te donne le contenu exact des fichiers restants, dans l’état où ils doivent exister maintenant.
-Pas encore branchés partout, mais compilables, cohérents, et alignés métier.
+Parfait. Donc tu as posé tout Application/ sans que PHP explose. C’est exactement le signal qu’on attendait.
+Les warnings étaient juste l’IDE qui s’ennuyait. Maintenant on lui donne du travail réel.
 
-Je vais volontairement éviter toute dépendance prématurée. Tu pourras commit ça sans honte.
+👉 Suite logique unique : implémenter la première vraie requête SQL.
+On commence par la plus simple et la plus structurante :
+
+UserRepository::countRegisteredBetween()
+
+Une seule méthode. Pas de dispersion. Pas de “tant qu’on y est”.
 
 ⸻
 
-📄 src/Application/Common/Period/PeriodResolver.php
+🎯 Rappel du besoin (verrouillé, on ne rediscute pas)
 
-Rôle
-	•	Résoudre toujours une période courante + une période de comparaison
-	•	Appliquer la règle métier par défaut
-	•	Centraliser la logique temporelle
-	•	Dépendre uniquement de la Request et de l’horloge
+Compter les utilisateurs enregistrés sur une période donnée,
+avec un filtre weekday optionnel,
+période incluse,
+logique 100 % backend.
+
+⸻
+
+📄 Fichier concerné
+
+📁 src/Repository/UserRepository.php
+
+Tu as déjà la signature. Maintenant on l’implémente pour de vrai.
+
+⸻
+
+✅ Implémentation exacte (Doctrine QueryBuilder)
 
 <?php
 
 declare(strict_types=1);
 
-namespace App\Application\Common\Period;
-
-use DateInterval;
-use DateTimeImmutable;
-use Symfony\Component\HttpFoundation\Request;
-
-final class PeriodResolver
-{
-    private const DEFAULT_INTERVAL = 'P30D';
-
-    public function resolve(Request $request, DateTimeImmutable $now): ResolvedPeriod
-    {
-        $from = $request->query->get('date_from');
-        $to   = $request->query->get('date_to');
-
-        if ($from !== null && $to !== null) {
-            $currentFrom = new DateTimeImmutable($from);
-            $currentTo   = new DateTimeImmutable($to);
-        } else {
-            $currentTo   = $now->setTime(23, 59, 59);
-            $currentFrom = $currentTo->sub(new DateInterval(self::DEFAULT_INTERVAL))
-                                     ->setTime(0, 0, 0);
-        }
-
-        $currentPeriod = new Period($currentFrom, $currentTo);
-
-        $comparisonTo   = $currentFrom->sub(new DateInterval('P1D'))->setTime(23, 59, 59);
-        $comparisonFrom = $comparisonTo
-            ->sub(new DateInterval('P' . ($currentPeriod->lengthInDays() - 1) . 'D'))
-            ->setTime(0, 0, 0);
-
-        $comparisonPeriod = new Period($comparisonFrom, $comparisonTo);
-
-        return new ResolvedPeriod($currentPeriod, $comparisonPeriod);
-    }
-}
-
-Pourquoi c’est comme ça
-	•	période par défaut = 30 jours glissants
-	•	comparaison = strictement précédente
-	•	même durée
-	•	inclusif
-	•	aucune ambiguïté
-
-⸻
-
-📄 src/Application/Admin/Dto/UserPeriodMetricsDto.php
-
-Rôle
-	•	Contrat figé backend → front
-	•	Aucun calcul
-	•	Aucune dépendance infra
-
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Admin\Dto;
+namespace App\Repository;
 
 use App\Application\Common\Period\Period;
+use App\Entity\User;
+use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\Persistence\ManagerRegistry;
 
-final class UserPeriodMetricsDto
+final class UserRepository extends ServiceEntityRepository
 {
-    public function __construct(
-        public readonly MetricDto $registeredUsers,
-        public readonly MetricDto $activeUsers,
-        public readonly Period $currentPeriod,
-        public readonly Period $comparisonPeriod,
-    ) {
-    }
-}
-
-
-⸻
-
-📄 src/Application/Admin/Dto/MetricDto.php
-
-(oui, il faut ce fichier, sinon tu vas regretter dans 3 semaines)
-
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Admin\Dto;
-
-final class MetricDto
-{
-    public function __construct(
-        public readonly int $count,
-        public readonly float $evolutionPercent,
-        public readonly Trend $trend,
-    ) {
-    }
-}
-
-
-⸻
-
-📄 src/Application/Admin/Dto/Trend.php
-
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Admin\Dto;
-
-enum Trend: string
-{
-    case UP = 'up';
-    case DOWN = 'down';
-    case STABLE = 'stable';
-}
-
-
-⸻
-
-📄 src/Application/Admin/UseCase/GetUserMetrics.php
-
-Rôle
-	•	Intention métier
-	•	Zéro SQL
-	•	Zéro HTTP
-
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Admin\UseCase;
-
-use App\Application\Common\Period\ResolvedPeriod;
-
-final class GetUserMetrics
-{
-    /**
-     * @param int[]|null $weekdays
-     */
-    public function __construct(
-        public readonly ResolvedPeriod $period,
-        public readonly ?array $weekdays,
-    ) {
-    }
-}
-
-
-⸻
-
-📄 src/Application/Admin/UseCase/GetUserMetricsHandler.php
-
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Admin\UseCase;
-
-use App\Application\Admin\Dto\UserPeriodMetricsDto;
-use App\Application\Admin\Query\UserMetricsQuery;
-
-final class GetUserMetricsHandler
-{
-    public function __construct(
-        private UserMetricsQuery $query,
-    ) {
-    }
-
-    public function handle(GetUserMetrics $command): UserPeriodMetricsDto
+    public function __construct(ManagerRegistry $registry)
     {
-        return $this->query->execute(
-            $command->period,
-            $command->weekdays,
-        );
-    }
-}
-
-
-⸻
-
-📄 src/Application/Admin/Query/UserMetricsQuery.php
-
-Rôle
-	•	Cœur métier KPI
-	•	Calcule les évolutions
-	•	Détermine les trends
-
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Admin\Query;
-
-use App\Application\Admin\Dto\MetricDto;
-use App\Application\Admin\Dto\Trend;
-use App\Application\Admin\Dto\UserPeriodMetricsDto;
-use App\Application\Common\Period\ResolvedPeriod;
-use App\Repository\MessageRepository;
-use App\Repository\UserRepository;
-
-final class UserMetricsQuery
-{
-    public function __construct(
-        private UserRepository $userRepository,
-        private MessageRepository $messageRepository,
-    ) {
+        parent::__construct($registry, User::class);
     }
 
     /**
-     * @param int[]|null $weekdays
+     * @param int[]|null $weekdays 1 (Monday) → 7 (Sunday)
      */
-    public function execute(ResolvedPeriod $period, ?array $weekdays): UserPeriodMetricsDto
+    public function countRegisteredBetween(Period $period, ?array $weekdays): int
     {
-        $currentRegistered = $this->userRepository
-            ->countRegisteredBetween($period->current(), $weekdays);
+        $qb = $this->createQueryBuilder('u')
+            ->select('COUNT(u.id)')
+            ->where('u.createdAt BETWEEN :from AND :to')
+            ->setParameter('from', $period->from())
+            ->setParameter('to', $period->to());
 
-        $previousRegistered = $this->userRepository
-            ->countRegisteredBetween($period->comparison(), $weekdays);
-
-        $currentActive = $this->messageRepository
-            ->countActiveUsersBetween($period->current(), $weekdays);
-
-        $previousActive = $this->messageRepository
-            ->countActiveUsersBetween($period->comparison(), $weekdays);
-
-        return new UserPeriodMetricsDto(
-            $this->buildMetric($currentRegistered, $previousRegistered),
-            $this->buildMetric($currentActive, $previousActive),
-            $period->current(),
-            $period->comparison(),
-        );
-    }
-
-    private function buildMetric(int $current, int $previous): MetricDto
-    {
-        if ($previous === 0) {
-            $evolution = $current === 0 ? 0.0 : 100.0;
-        } else {
-            $evolution = (($current - $previous) / $previous) * 100;
+        if (!empty($weekdays)) {
+            $qb
+                ->andWhere('DAYOFWEEK(u.createdAt) IN (:weekdays)')
+                ->setParameter('weekdays', $this->mapWeekdaysToSql($weekdays));
         }
 
-        $trend = match (true) {
-            $evolution > 0 => Trend::UP,
-            $evolution < 0 => Trend::DOWN,
-            default => Trend::STABLE,
-        };
+        return (int) $qb
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
 
-        return new MetricDto(
-            $current,
-            round($evolution, 1),
-            $trend,
+    /**
+     * Doctrine / MySQL :
+     * DAYOFWEEK() → 1 (Sunday) to 7 (Saturday)
+     * Métier :
+     * 1 (Monday) → 7 (Sunday)
+     */
+    private function mapWeekdaysToSql(array $weekdays): array
+    {
+        return array_map(
+            static fn (int $day): int => $day === 7 ? 1 : $day + 1,
+            $weekdays
         );
     }
 }
@@ -271,34 +87,58 @@ final class UserMetricsQuery
 
 ⸻
 
-📄 Repositories – signatures uniquement (pour l’instant)
+🧠 Pourquoi cette implémentation est correcte (et pas une autre)
 
-src/Repository/UserRepository.php
+✔ Period est enfin utilisé
+	•	plus de warning IDE
+	•	contrat respecté
+	•	aucune duplication from/to
 
-public function countRegisteredBetween(Period $period, ?array $weekdays): int;
+✔ Weekday métier ≠ SQL
+	•	métier : 1 = Monday
+	•	SQL (MySQL) : 1 = Sunday
+	•	mapping centralisé, pas planqué dans le controller
 
-src/Repository/MessageRepository.php
+✔ Inclusivité respectée
+	•	BETWEEN :from AND :to
+	•	cohérent avec toute ta frise temporelle
 
-public function countActiveUsersBetween(Period $period, ?array $weekdays): int;
-
+✔ Zéro logique parasite
+	•	pas de fallback
+	•	pas de “si null alors aujourd’hui”
+	•	ça, c’est le job du PeriodResolver
 
 ⸻
 
-🧠 État du projet après ça
-	•	Tous les concepts métier sont posés
-	•	Rien n’est couplé au front
-	•	Rien n’est couplé à EasyAdmin
-	•	Tu peux tester chaque couche indépendamment
-	•	Tu peux brancher quand tu veux
+⛔ Ce qu’on n’a volontairement PAS fait
+	•	pas de DATE(u.createdAt)
+	•	pas de calcul côté PHP
+	•	pas de Carbon
+	•	pas de logique conditionnelle foireuse
+	•	pas de duplication weekday ailleurs
 
 ⸻
 
-Prochaine étape logique (et seulement celle-là)
+🧪 État du projet maintenant
 
-👉 Implémenter UNE requête SQL
-(par exemple countRegisteredBetween)
-et vérifier que tout le pipeline compile.
+À ce stade :
+	•	Application/ ✔ posé
+	•	UserRepository ✔ concret
+	•	UserMetricsQuery ✔ peut appeler cette méthode
+	•	PHPStorm ✔ arrête de râler
+	•	Tu avances dans le bon sens
 
-Après ça, le reste est mécanique.
+⸻
 
-Tu avances bien. Et oui, c’est propre.
+👉 Prochaine étape (une seule)
+
+Implémenter :
+
+MessageRepository::countActiveUsersBetween()
+
+C’est la même logique, avec :
+	•	DISTINCT user
+	•	jointure message → conversation → user
+	•	filtre weekday sur message.createdAt
+
+Dis-le, et je te donne le code exact, sans détour.
