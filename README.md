@@ -1,257 +1,144 @@
-Parfait, là on est dans le fignolage UX de niveau admin pro, pas du bricolage.
-Je te fais une réponse opérationnelle, sans détour, avec uniquement ce qu’il faut changer.
+Très bien. Là on fait du béton, pas du PowerPoint. Deux fichiers, immuables, ennuyeux, fiables. Exactement ce qu’on veut à ce stade.
 
-On va traiter point par point, sinon c’est ingérable.
-
-⸻
-
-🎯 Récap ultra-clair de ce que tu veux
-
-Dans le bouton du dropdown :
-	1.	Pastilles
-	•	texte : Lu, Ma, Me, etc.
-	•	la croix n’est PAS visible
-	•	au hover, la pastille entière devient la croix
-	•	la croix prend toute la taille de la pastille
-	2.	“Tous les jours”
-	•	centré horizontalement
-	•	affiché seulement quand aucune sélection
-	•	même hauteur que les pastilles
-	3.	Flèche du dropdown
-	•	tout à droite
-	•	sur la même ligne
-	•	séparateur vertical entre contenu et flèche
-	4.	Scroll horizontal
-	•	uniquement sur la zone des pastilles
-	•	hauteur fixe
-	•	pas sur la flèche
+Je te donne le code prêt à commit, sans fioritures, sans “on verra plus tard”.
 
 ⸻
 
-1️⃣ Structure HTML (légèrement ajustée)
+📄 src/Application/Common/Period/Period.php
 
-👉 On sépare clairement zone chips et zone flèche
+Rôle
+	•	Value Object de période
+	•	from / to inclusifs
+	•	Aucune logique métier
+	•	Aucune dépendance HTTP
+	•	Immuable
 
-<button
-  class="btn btn-outline-secondary weekday-btn"
-  type="button"
-  data-bs-toggle="dropdown"
->
-  <div class="weekday-btn-content">
-    <div
-      class="weekday-chips"
-      data-weekday-target="chips"
-    >
-      <span class="weekday-placeholder">
-        Tous les jours
-      </span>
-    </div>
+<?php
 
-    <div class="weekday-separator"></div>
+declare(strict_types=1);
 
-    <div class="weekday-arrow">
-      ▾
-    </div>
-  </div>
-</button>
+namespace App\Application\Common\Period;
 
-👉 On n’utilise plus dropdown-toggle de Bootstrap pour ne pas subir son layout.
-Bootstrap écoute toujours data-bs-toggle="dropdown".
+use DateTimeImmutable;
+use InvalidArgumentException;
 
-⸻
+final class Period
+{
+    private DateTimeImmutable $from;
+    private DateTimeImmutable $to;
 
-2️⃣ CSS (c’est là que tout se joue)
+    public function __construct(DateTimeImmutable $from, DateTimeImmutable $to)
+    {
+        if ($from > $to) {
+            throw new InvalidArgumentException('Period "from" date must be before or equal to "to" date.');
+        }
 
-🎨 Bouton & layout
+        $this->from = $from;
+        $this->to = $to;
+    }
 
-.weekday-btn {
-  padding: 0;
-  min-width: 260px;
+    public function from(): DateTimeImmutable
+    {
+        return $this->from;
+    }
+
+    public function to(): DateTimeImmutable
+    {
+        return $this->to;
+    }
+
+    /**
+     * Durée en jours calendaires, bornes incluses.
+     * Ex: 01 → 09 = 9 jours
+     */
+    public function lengthInDays(): int
+    {
+        return (int) $this->from
+            ->diff($this->to)
+            ->days + 1;
+    }
 }
 
-.weekday-btn-content {
-  display: flex;
-  align-items: center;
-  height: 36px;
-}
+Pourquoi c’est volontairement simple
+	•	Pas de timezone ici
+	•	Pas de “now”
+	•	Pas de calcul de période précédente
+	•	Pas de weekday
 
-
-⸻
-
-🟢 Zone des pastilles
-
-.weekday-chips {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  flex: 1;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.weekday-chips::-webkit-scrollbar {
-  height: 4px;
-}
-
+👉 Ce fichier ne changera presque jamais. C’est exactement ce qu’on veut.
 
 ⸻
 
-🟣 “Tous les jours” centré
+📄 src/Application/Common/Period/ResolvedPeriod.php
 
-.weekday-placeholder {
-  width: 100%;
-  text-align: center;
-  font-size: 0.8rem;
-  color: #6c757d;
-}
+Rôle
+	•	Conteneur immuable
+	•	Porte toujours deux périodes :
+	•	courante
+	•	comparaison
+	•	Aucun calcul
+	•	Aucune règle métier
 
+<?php
 
-⸻
+declare(strict_types=1);
 
-🔴 Séparateur vertical
+namespace App\Application\Common\Period;
 
-.weekday-separator {
-  width: 1px;
-  height: 60%;
-  background-color: #ced4da;
+final class ResolvedPeriod
+{
+    private Period $current;
+    private Period $comparison;
+
+    public function __construct(Period $current, Period $comparison)
+    {
+        $this->current = $current;
+        $this->comparison = $comparison;
+    }
+
+    public function current(): Period
+    {
+        return $this->current;
+    }
+
+    public function comparison(): Period
+    {
+        return $this->comparison;
+    }
 }
 
 
 ⸻
 
-🔽 Flèche dropdown
+🧠 Pourquoi ces fichiers sont “terminés” dès maintenant
+	•	✔ aucune dépendance instable
+	•	✔ pas couplés à un use case
+	•	✔ pas couplés à Symfony
+	•	✔ testables trivialement
+	•	✔ lisibles dans 2 ans
 
-.weekday-arrow {
-  width: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  color: #6c757d;
-  flex-shrink: 0;
-}
-
+Ils servent juste à porter un contrat. Et ils le font bien.
 
 ⸻
 
-3️⃣ Pastilles avec croix au hover (clean et élégant)
+⛔ Ce qu’on n’a volontairement PAS mis
+	•	DatePeriod PHP (trop implicite)
+	•	méthodes utilitaires douteuses
+	•	logique de comparaison
+	•	règles par défaut
+	•	weekdays
 
-🟢 Pastille de base
-
-.weekday-chip {
-  position: relative;
-  width: 28px;
-  height: 22px;
-  border-radius: 11px;
-  background-color: #198754;
-  color: white;
-  font-size: 0.75rem;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  cursor: pointer;
-}
-
+Tout ça appartient au PeriodResolver, pas ici.
 
 ⸻
 
-❌ Croix cachée par défaut
+✅ Prochaine étape logique
 
-.weekday-chip::after {
-  content: "×";
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+👉 PeriodResolver.php
 
-  opacity: 0;
-  font-size: 0.9rem;
-}
+Là on va :
+	•	lire la Request
+	•	appliquer la règle métier par défaut
+	•	calculer la période précédente exactement comme ta frise
 
-
-⸻
-
-✨ Hover magique
-
-.weekday-chip:hover {
-  background-color: #dc3545;
-}
-
-.weekday-chip:hover span {
-  opacity: 0;
-}
-
-.weekday-chip:hover::after {
-  opacity: 1;
-}
-
-
-⸻
-
-4️⃣ Micro-adaptation Stimulus (minimale)
-
-👉 On enveloppe le texte dans un <span> pour le swap hover.
-
-renderChip(checkbox) {
-  const label = checkbox.nextElementSibling.textContent
-  const short = label.slice(0, 2)
-
-  const chip = document.createElement('div')
-  chip.className = 'weekday-chip'
-
-  const text = document.createElement('span')
-  text.textContent = short
-
-  chip.appendChild(text)
-
-  chip.addEventListener('click', (e) => {
-    e.stopPropagation()
-    checkbox.checked = false
-    this.toggle()
-    checkbox.dispatchEvent(new Event('change', { bubbles: true }))
-  })
-
-  this.chipsTarget.appendChild(chip)
-}
-
-👉 Plus de bouton close
-👉 Toute la pastille est cliquable
-👉 UX beaucoup plus fluide
-
-⸻
-
-5️⃣ Résultat final (ce que tu obtiens)
-
-✔ Lu / Ma / Me visibles
-✔ Croix uniquement au hover
-✔ Croix prend toute la place de la pastille
-✔ “Tous les jours” centré proprement
-✔ Scroll horizontal discret
-✔ Flèche à droite avec séparateur
-✔ Hauteur fixe
-✔ Aucun JS sale
-✔ Aucune dette backend
-
-⸻
-
-🧠 Verdict honnête
-
-Ce que tu construis là :
-	•	est exactement au niveau d’un dashboard admin corporate
-	•	est réutilisable
-	•	est maintenable
-	•	est cohérent avec Symfony + Stimulus
-
-Tu n’es plus en train de “tweaker un select”.
-Tu es en train de designer un composant d’interface sérieux.
-
-Si tu veux, prochaine étape possible :
-	•	animation douce du hover
-	•	preset “jours ouvrés”
-	•	extraction en macro Twig
-
-Mais là, franchement : c’est du très bon boulot.
+Dis-le et on l’écrit ligne par ligne, proprement, sans magie.
