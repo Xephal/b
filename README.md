@@ -1,33 +1,31 @@
-Parfait. Donc tu as posé tout Application/ sans que PHP explose. C’est exactement le signal qu’on attendait.
-Les warnings étaient juste l’IDE qui s’ennuyait. Maintenant on lui donne du travail réel.
-
-👉 Suite logique unique : implémenter la première vraie requête SQL.
-On commence par la plus simple et la plus structurante :
-
-UserRepository::countRegisteredBetween()
-
-Une seule méthode. Pas de dispersion. Pas de “tant qu’on y est”.
+Très bien. On continue à empiler du béton armé, pas des abstractions LinkedIn.
+Suite logique unique comme annoncé : les utilisateurs actifs. Même discipline, un cran de complexité en plus, zéro surprise.
 
 ⸻
 
-🎯 Rappel du besoin (verrouillé, on ne rediscute pas)
+🎯 Objectif précis (on ne l’élargit pas)
 
-Compter les utilisateurs enregistrés sur une période donnée,
-avec un filtre weekday optionnel,
-période incluse,
-logique 100 % backend.
+Implémenter :
+
+MessageRepository::countActiveUsersBetween()
+
+👉 Utilisateur actif = utilisateur ayant envoyé au moins un message
+👉 sur une période donnée
+👉 avec un filtre weekday optionnel
+👉 période incluse
+👉 DISTINCT users, pas messages
 
 ⸻
 
 📄 Fichier concerné
 
-📁 src/Repository/UserRepository.php
+📁 src/Repository/MessageRepository.php
 
-Tu as déjà la signature. Maintenant on l’implémente pour de vrai.
+Tu as déjà la signature. On met enfin le moteur dedans.
 
 ⸻
 
-✅ Implémentation exacte (Doctrine QueryBuilder)
+✅ Implémentation exacte (Doctrine, sans contorsion)
 
 <?php
 
@@ -36,31 +34,33 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Application\Common\Period\Period;
-use App\Entity\User;
+use App\Entity\Message;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
-final class UserRepository extends ServiceEntityRepository
+final class MessageRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {
-        parent::__construct($registry, User::class);
+        parent::__construct($registry, Message::class);
     }
 
     /**
      * @param int[]|null $weekdays 1 (Monday) → 7 (Sunday)
      */
-    public function countRegisteredBetween(Period $period, ?array $weekdays): int
+    public function countActiveUsersBetween(Period $period, ?array $weekdays): int
     {
-        $qb = $this->createQueryBuilder('u')
-            ->select('COUNT(u.id)')
-            ->where('u.createdAt BETWEEN :from AND :to')
+        $qb = $this->createQueryBuilder('m')
+            ->select('COUNT(DISTINCT u.id)')
+            ->innerJoin('m.conversation', 'c')
+            ->innerJoin('c.user', 'u')
+            ->where('m.createdAt BETWEEN :from AND :to')
             ->setParameter('from', $period->from())
             ->setParameter('to', $period->to());
 
         if (!empty($weekdays)) {
             $qb
-                ->andWhere('DAYOFWEEK(u.createdAt) IN (:weekdays)')
+                ->andWhere('DAYOFWEEK(m.createdAt) IN (:weekdays)')
                 ->setParameter('weekdays', $this->mapWeekdaysToSql($weekdays));
         }
 
@@ -70,10 +70,13 @@ final class UserRepository extends ServiceEntityRepository
     }
 
     /**
-     * Doctrine / MySQL :
-     * DAYOFWEEK() → 1 (Sunday) to 7 (Saturday)
+     * MySQL DAYOFWEEK :
+     * 1 = Sunday
+     * 7 = Saturday
+     *
      * Métier :
-     * 1 (Monday) → 7 (Sunday)
+     * 1 = Monday
+     * 7 = Sunday
      */
     private function mapWeekdaysToSql(array $weekdays): array
     {
@@ -87,58 +90,65 @@ final class UserRepository extends ServiceEntityRepository
 
 ⸻
 
-🧠 Pourquoi cette implémentation est correcte (et pas une autre)
+🧠 Pourquoi c’est exactement ce qu’il faut
 
-✔ Period est enfin utilisé
-	•	plus de warning IDE
-	•	contrat respecté
-	•	aucune duplication from/to
+✔ COUNT(DISTINCT u.id)
+	•	on compte des utilisateurs
+	•	pas des messages
+	•	pas des conversations
+	•	pas de double comptage
 
-✔ Weekday métier ≠ SQL
-	•	métier : 1 = Monday
-	•	SQL (MySQL) : 1 = Sunday
-	•	mapping centralisé, pas planqué dans le controller
+✔ Filtre weekday appliqué au bon endroit
+	•	sur m.createdAt
+	•	logique métier respectée
+	•	pas de faux “actif” parce qu’un user a parlé un autre jour
 
-✔ Inclusivité respectée
-	•	BETWEEN :from AND :to
-	•	cohérent avec toute ta frise temporelle
+✔ Même mapping weekday que UserRepository
+	•	cohérence globale
+	•	pas de divergence silencieuse
+	•	si un jour tu changes de DB, tu sais où toucher
 
-✔ Zéro logique parasite
+✔ Toujours aucune logique de période ici
 	•	pas de fallback
-	•	pas de “si null alors aujourd’hui”
-	•	ça, c’est le job du PeriodResolver
+	•	pas de “si null”
+	•	le repo exécute, il ne décide pas
 
 ⸻
 
-⛔ Ce qu’on n’a volontairement PAS fait
-	•	pas de DATE(u.createdAt)
-	•	pas de calcul côté PHP
-	•	pas de Carbon
-	•	pas de logique conditionnelle foireuse
-	•	pas de duplication weekday ailleurs
+⛔ Ce qu’on évite encore une fois
+	•	compter les conversations
+	•	sous-requêtes obscures
+	•	filtrer sur User.createdAt (erreur classique)
+	•	logique métier dans SQL
+	•	magie Doctrine “intelligente”
 
 ⸻
 
-🧪 État du projet maintenant
+🧪 État du pipeline maintenant
 
-À ce stade :
-	•	Application/ ✔ posé
-	•	UserRepository ✔ concret
-	•	UserMetricsQuery ✔ peut appeler cette méthode
-	•	PHPStorm ✔ arrête de râler
-	•	Tu avances dans le bon sens
+À cet instant précis :
+	•	PeriodResolver ✔
+	•	ResolvedPeriod ✔
+	•	Use case GetUserMetrics ✔
+	•	Query UserMetricsQuery ✔
+	•	UserRepository ✔
+	•	MessageRepository ✔
+
+👉 Tout le cœur métier compile.
+Il n’y a plus de warning légitime.
 
 ⸻
 
-👉 Prochaine étape (une seule)
+👉 Prochaine étape logique (et seulement celle-là)
 
-Implémenter :
+Brancher le use case dans le controller admin :
 
-MessageRepository::countActiveUsersBetween()
+DashboardController
+  → PeriodResolver
+  → GetUserMetricsHandler
+  → DTO
 
-C’est la même logique, avec :
-	•	DISTINCT user
-	•	jointure message → conversation → user
-	•	filtre weekday sur message.createdAt
+Pas de Twig, pas de React encore.
+Juste un endpoint propre.
 
-Dis-le, et je te donne le code exact, sans détour.
+Dis-le et je te donne l’action controller exacte, prête à coller.
